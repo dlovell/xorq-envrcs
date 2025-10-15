@@ -1,0 +1,9 @@
+this_dir=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
+export ACERO_ALIGNMENT_HANDLING=ignore
+
+source_env .envrc.nix-config
+use flake .#virtualenv-editable-312
+# source ../.venv/bin/activate && uv sync --all-extras --all-groups
+
+dotenv_if_exists $this_dir/user/.env.otel
+dotenv_if_exists $this_dir/user/.env.user.snowflake

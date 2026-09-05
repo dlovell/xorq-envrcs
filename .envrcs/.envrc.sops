@@ -1,3 +1,11 @@
+# Every local in this file is _sops_-prefixed on purpose. `direnv dotenv`
+# emits `export <key>=...` for each secret, and `export` on a name that is
+# `local` in the enclosing function marks the *local* for export — the
+# binding is popped when the function returns and never reaches the
+# environment, while use_sops returns 0. A bundle with a key named `path`
+# or `decrypted` would silently go missing. Do not rename these to
+# something a secret might plausibly be called.
+
 # Shared default bundle path, so a bare `use sops` / `use sops_if_exists` is
 # not a no-op. Fails loudly when direnv_root is unset: this fragment expects
 # to be sourced from the root .envrc, and without it the default would
@@ -17,23 +25,23 @@ _sops_bundle_path() {
 
 use_sops() {
     # https://github.com/direnv/direnv/wiki/Sops#how-to-encrypt
-    local path output_type=${2:-dotenv} decrypted parsed
-    path=$(_sops_bundle_path "${1:-}") || return 1
+    local _sops_path _sops_output_type=${2:-dotenv} _sops_decrypted _sops_parsed
+    _sops_path=$(_sops_bundle_path "${1:-}") || return 1
 
     # dotenv only. The branch this replaces ran `eval` on the decrypted
-    # payload for any other output_type, which for YAML or JSON is a syntax
+    # payload for any other output type, which for YAML or JSON is a syntax
     # error at best and arbitrary command execution at worst.
-    if [ "$output_type" != "dotenv" ]; then
-        log_error "use_sops: only dotenv bundles are supported (got '$output_type')"
+    if [ "$_sops_output_type" != "dotenv" ]; then
+        log_error "use_sops: only dotenv bundles are supported (got '$_sops_output_type')"
         return 1
     fi
 
     # watch before decrypting: a file that fails to decrypt is still watched,
     # so fixing it (or the key) retriggers the reload.
-    watch_file "$path"
+    watch_file "$_sops_path"
 
-    decrypted=$(sops --decrypt --input-type dotenv --output-type dotenv "$path") || {
-        log_error "sops --decrypt failed for $path"
+    _sops_decrypted=$(sops --decrypt --input-type dotenv --output-type dotenv "$_sops_path") || {
+        log_error "sops --decrypt failed for $_sops_path"
         return 1
     }
 
@@ -42,24 +50,24 @@ use_sops() {
     # decrypts but is malformed would eval to nothing and report success.
     # printf, not echo, so a payload whose first line begins -n or -e
     # survives intact.
-    parsed=$(printf '%s\n' "$decrypted" | direnv dotenv bash /dev/stdin) || {
-        log_error "direnv dotenv failed to parse $path"
+    _sops_parsed=$(printf '%s\n' "$_sops_decrypted" | direnv dotenv bash /dev/stdin) || {
+        log_error "direnv dotenv failed to parse $_sops_path"
         return 1
     }
-    eval "$parsed"
+    eval "$_sops_parsed"
 }
 
 use_sops_if_exists() {
-    local path
-    path=$(_sops_bundle_path "${1:-}") || return 1
+    local _sops_path
+    _sops_path=$(_sops_bundle_path "${1:-}") || return 1
 
     # watch before the test, mirroring direnv's own source_env_if_exists and
     # dotenv_if_exists: a missing file is recorded as a watch with
     # exists:false, so creating the bundle later retriggers the reload
     # instead of waiting for a manual `direnv reload`.
-    watch_file "$path"
+    watch_file "$_sops_path"
 
-    if [ -f "$path" ]; then
-        use_sops "$path" "${@:2}"
+    if [ -f "$_sops_path" ]; then
+        use_sops "$_sops_path" "${@:2}"
     fi
 }

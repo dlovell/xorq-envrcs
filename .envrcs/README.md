@@ -10,8 +10,8 @@ direnv configuration split into composable fragments, sourced from the root `.en
 | `.envrc.nix-config` | Bootstraps nix-direnv; where to `watch_file` imported nix modules |
 | `.envrc.secrets.template` | Decrypts `.env.secrets.demo.sops-encrypted`; shows how to add further bundles |
 | `.envrc.user.template` | Default user env: sources `.envrc.user.uv`, loads `.env.local` |
-| `.envrc.user.flake` | User env variant: nix flake (immutable install); no-ops without a `flake.nix` |
-| `.envrc.user.uv` | User env variant: uv sync + venv activation; no-ops without a `pyproject.toml` |
+| `.envrc.user.flake` | User env variant: nix flake (immutable install); no-ops without a `flake.nix`, and watches for one appearing |
+| `.envrc.user.uv` | User env variant: uv sync + venv activation; no-ops without a `pyproject.toml`, and watches for one appearing |
 | `.env.local.template` | Third layer: per-user, non-secret dotenv values |
 | `.env.secrets.demo.sops-encrypted` | Encrypted demo bundle the secrets layer decrypts |
 
@@ -77,7 +77,9 @@ environment in a state nobody asked for. Copy it and uncomment exactly one.
 
 `.gitignore.template` ignores `.envrcs/.env.*` wholesale, covering any future
 per-user dotenv fragment, with a `!.envrcs/.env.*.template` negation so the
-tracked templates stay visible in a fresh clone.
+tracked templates stay visible in a fresh clone. It also ignores what the
+user layer builds — `.direnv`, `.venv` (from `uv sync`) and `result*` (from a
+nix build) — none of which belong in a commit.
 
 ## sops
 
@@ -87,6 +89,13 @@ reload. A failed `sops --decrypt` is reported via `log_error` and returns
 non-zero rather than silently producing an environment with no secrets —
 which is what happens if the decrypt runs inside a pipeline, where its exit
 status is discarded.
+
+`use_sops_if_exists` watches the path *before* testing whether it exists,
+mirroring direnv's own `source_env_if_exists` and `dotenv_if_exists`. A
+missing file is recorded as a watch with `exists:false`, so building the
+bundle later retriggers the reload rather than leaving the secrets layer
+silently empty until someone runs `direnv reload` by hand. The same applies
+to the `flake.nix`/`pyproject.toml` guards in the user fragments.
 
 `use_sops_if_exists` shares `use_sops`' default path,
 `$direnv_root/.envrcs/.env.secrets.concatenated.sops-encrypted` — the
@@ -135,9 +144,15 @@ explicit `watch_file`, which the fragment carries commented out — this repo
 ships no nix files, so the line is documentation until it does. Its paths are
 relative to `.envrcs/`, e.g. `watch_file ../nix/{commands,packages}.nix`.
 
+For the same reason, `.envrc.user.flake` calls `use flake "$direnv_root"`
+and not a bare `use flake`. The fragment runs with PWD at `.envrcs/`, and
+nix-direnv's `use_flake` defaults its flake expression to `.` — so the bare
+form evaluates `.envrcs`, records `MISSING .envrcs/flake.nix` in
+`DIRENV_WATCHES`, and never notices a change to the real flake.
+
 ## Path conventions
 
-- **`$direnv_root`** — exported by the root `.envrc`; points to the repo root. Use it for paths that must survive worktree copies (e.g. `$direnv_root/.venv`).
+- **`$direnv_root`** — exported by the root `.envrc`; points to the repo root. Use it for paths that must survive worktree copies (e.g. `$direnv_root/.venv`), and for anything a helper would otherwise resolve against PWD (e.g. `use flake "$direnv_root"`).
 - Fragment-relative names (`source_env .envrc.sops`, `dotenv_if_exists .env.local`) resolve against `.envrcs/` itself, so bare names work between fragments.
 
 Prefer these over bare relative paths like `../.venv`, which break when the

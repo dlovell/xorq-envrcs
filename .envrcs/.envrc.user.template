@@ -1,4 +1,7 @@
-source_env .envrc.user.uv
+# Pick one. Both are commented by default: the toolchain is a per-user,
+# per-repo choice, and this file is yours to edit — the auto-create never
+# overwrites it.
+# source_env .envrc.user.uv
 # source_env .envrc.user.flake
 
 dotenv_if_exists .env.local

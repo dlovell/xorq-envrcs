@@ -12,7 +12,15 @@ if [ -f "$direnv_root/flake.nix" ]; then
     # this fragment is sourced with PWD at .envrcs/, so a bare `use flake`
     # would evaluate .envrcs, watch a flake.nix that isn't there, and never
     # invalidate the cached devShell when the real flake changes.
+    # Run from the root, not from .envrcs/. direnv resolves its layout dir
+    # as ${direnv_layout_dir:-$PWD/.direnv}, and the wiki's popular
+    # cache-relocation snippet redefines direnv_layout_dir as a function
+    # keyed on $PWD, which ignores the variable the root .envrc sets. Either
+    # way the flake profile and its nix GC root would otherwise be keyed on
+    # .envrcs/ while .venv sits at the root.
+    pushd "$direnv_root" >/dev/null
     use flake "$direnv_root"
+    popd >/dev/null
 else
     log_status "no flake.nix in $direnv_root; skipping use flake"
 fi

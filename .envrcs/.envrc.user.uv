@@ -1,7 +1,10 @@
 # Watch before the test below, so creating pyproject.toml later retriggers
 # the reload instead of leaving the fragment skipped until a manual
-# `direnv reload`.
+# `direnv reload`. uv.lock too: a pull that bumps pinned versions touches
+# only the lock, and without a watch the venv would go quietly stale.
+# (The flake fragment needs no equivalent — nix-direnv watches flake.lock.)
 watch_file "$direnv_root/pyproject.toml"
+watch_file "$direnv_root/uv.lock"
 
 # No-op when there is no project to sync, so this fragment can stay enabled
 # in a repo that has no pyproject.toml yet.

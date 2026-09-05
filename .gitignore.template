@@ -5,11 +5,13 @@
 .gitignore
 
 # Build products of the user layer: .direnv is direnv's own cache, .venv is
-# created by `uv sync`, result* by a nix build.
+# created by `uv sync`, /result* by a nix build. The last two are anchored
+# with a leading slash: nix only ever writes them at the root, and unanchored
+# they would swallow any directory named result/ anywhere in the tree.
 .direnv
 .venv
-result
-result-*
+/result
+/result-*
 
 # Local direnv fragments, auto-created from their templates
 .envrcs/.envrc.secrets

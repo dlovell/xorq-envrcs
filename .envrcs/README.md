@@ -26,12 +26,13 @@ Never commit these; `.gitignore` covers them.
 | `.envrc.secrets` | `.envrc.secrets.template` | yes, mode `600` |
 | `.envrc.user` | `.envrc.user.template` | yes, mode `600` |
 | `.env.local` | `.env.local.template` | **no** — copy manually |
-| `.env.secrets.*` | sops-encrypted secret bundles | no |
+| `.env`, `*.env` | plaintext secret sources — never committed | no |
 
-The repo root also carries demo sops inputs: `secrets.yaml` (dotenv-format,
-encrypted — the default path `use_sops` looks for) and `plain-text.yaml`.
-`secrets.yaml` is a single-bundle *demo*; the intended production shape is
-one concatenated bundle, described below.
+The repo root also carries `secrets.yaml`: a dotenv-format, sops-encrypted
+demo bundle, and the default path `use_sops` looks for. It is committed
+because it is encrypted — the plaintext it was built from is not, and is
+covered by the ignore rules. `secrets.yaml` is a single-bundle *demo*; the
+intended production shape is one concatenated bundle, described below.
 
 ## Auto-create, and how to disable a fragment
 
@@ -114,9 +115,10 @@ specified` despite its help text, so `/dev/stdin` must be named explicitly.
 extension to sniff. With no `.sops.yaml` in this repo there are also no
 creation rules, so the recipient must be given as `--pgp <fingerprint>`.
 
-The bundle and its plaintext sources are both covered by the
-`.envrcs/.env.*` ignore rule, i.e. treated as local artifacts rather than
-committed — see the table above.
+Plaintext sources are ignored (`.env`, `*.env`, `.envrcs/.env.*`); the
+encrypted bundle is not (`!*.sops-encrypted`). Committing the bundle is what
+lets a fresh clone reach a working environment without first obtaining the
+plaintext by some other channel.
 
 Do not add `set -x` while debugging this fragment: bash traces `eval` *after*
 expansion, so the decrypted `export` lines land in stderr on every reload.

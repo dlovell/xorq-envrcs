@@ -10,8 +10,15 @@
 .envrcs/.envrc.secrets
 .envrcs/.envrc.user
 
-# Per-user dotenv fragments (third layer) and sops-encrypted bundles.
-# The trailing negation keeps the tracked `.env.*.template` files visible —
-# without it the wildcard hides them from a fresh clone.
+# Per-user dotenv fragments (third layer) and plaintext secret sources.
+# Plaintext never gets committed, so the wildcard is deliberately broad.
 .envrcs/.env.*
+.env
+*.env
+
+# Tracked exceptions, applied after the rules above:
+#  - the templates, which the wildcard would otherwise hide from a fresh clone
+#  - sops-encrypted bundles: an encrypted artifact is safe to commit, and
+#    committing it is what lets a clone reach a working environment
 !.envrcs/.env.*.template
+!*.sops-encrypted

@@ -129,8 +129,9 @@ environment in a state nobody asked for. Copy it and uncomment exactly one.
 `.gitignore.template` ignores `.envrcs/.env.*` wholesale, covering any future
 per-user dotenv fragment, with a `!.envrcs/.env.*.template` negation so the
 tracked templates stay visible in a fresh clone. It also ignores what the
-user layer builds — `.direnv`, `.venv` (from `uv sync`) and `result*` (from a
-nix build) — none of which belong in a commit.
+user layer builds — `.direnv`, `.venv` (from `uv sync`) and `/result*` (from
+a nix build, anchored because nix only writes them at the root) — none of
+which belong in a commit.
 
 ## sops
 

@@ -17,8 +17,11 @@ if [ -f "$direnv_root/flake.nix" ]; then
     # cache-relocation snippet redefines direnv_layout_dir as a function
     # keyed on $PWD, which ignores the variable the root .envrc sets. Either
     # way the flake profile and its nix GC root would otherwise be keyed on
-    # .envrcs/ while .venv sits at the root.
-    pushd "$direnv_root" >/dev/null
+    # .envrcs/ while .venv sits at the root. It also fixes the generated
+    # nix-direnv-reload helper: _nix_direnv_preflight bakes $PWD into it as
+    # `direnv exec "$PWD" true`, which pointed at .envrcs/ — a directory
+    # with no .envrc, so the helper could not work at all.
+    pushd "$direnv_root" >/dev/null || return 1
     use flake "$direnv_root"
     popd >/dev/null
 else

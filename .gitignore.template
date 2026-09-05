@@ -4,7 +4,12 @@
 # auto-create skips an existing file).
 .gitignore
 
+# Build products of the user layer: .direnv is direnv's own cache, .venv is
+# created by `uv sync`, result* by a nix build.
 .direnv
+.venv
+result
+result-*
 
 # Local direnv fragments, auto-created from their templates
 .envrcs/.envrc.secrets

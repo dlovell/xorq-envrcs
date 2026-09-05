@@ -1,15 +1,26 @@
 use_sops() {
-    set -x
     # https://github.com/direnv/direnv/wiki/Sops#how-to-encrypt
     local path=${1:-$PWD/../secrets.yaml}
     local output_type=${2:-dotenv}
-    if [ "$output_type" = "dotenv" ]; then
-        eval "$(sops --decrypt --input-type dotenv --output-type dotenv "$path" | direnv dotenv bash /dev/stdin)"
-    else
-        eval "$(sops --decrypt --input-type $output_type --output-type $output_type "$path")"
-    fi
+    local decrypted
 
+    # watch before decrypting: a file that fails to decrypt is still watched,
+    # so fixing it (or the key) retriggers the reload.
     watch_file "$path"
+
+    if [ "$output_type" = "dotenv" ]; then
+        decrypted=$(sops --decrypt --input-type dotenv --output-type dotenv "$path") || {
+            log_error "sops --decrypt failed for $path"
+            return 1
+        }
+        eval "$(echo "$decrypted" | direnv dotenv bash /dev/stdin)"
+    else
+        decrypted=$(sops --decrypt --input-type "$output_type" --output-type "$output_type" "$path") || {
+            log_error "sops --decrypt failed for $path"
+            return 1
+        }
+        eval "$decrypted"
+    fi
 }
 
 use_sops_if_exists() {

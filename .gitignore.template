@@ -1,0 +1,17 @@
+# Auto-created as `.gitignore` by the root `.envrc`. This template is tracked;
+# the generated `.gitignore` is untracked and ignores itself, so a repo
+# adopting this layout keeps whatever `.gitignore` it already has (the
+# auto-create skips an existing file).
+.gitignore
+
+.direnv
+
+# Local direnv fragments, auto-created from their templates
+.envrcs/.envrc.secrets
+.envrcs/.envrc.user
+
+# Per-user dotenv fragments (third layer) and sops-encrypted bundles.
+# The trailing negation keeps the tracked `.env.*.template` files visible —
+# without it the wildcard hides them from a fresh clone.
+.envrcs/.env.*
+!.envrcs/.env.*.template

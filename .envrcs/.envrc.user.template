@@ -1,2 +1,4 @@
 source_env .envrc.user.uv
 # source_env .envrc.user.flake
+
+dotenv_if_exists .env.local

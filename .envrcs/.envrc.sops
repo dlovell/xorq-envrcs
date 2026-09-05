@@ -1,6 +1,6 @@
 use_sops() {
     # https://github.com/direnv/direnv/wiki/Sops#how-to-encrypt
-    local path=${1:-$PWD/../secrets.yaml}
+    local path=${1:-$direnv_root/.envrcs/.env.secrets.concatenated.sops-encrypted}
     local output_type=${2:-dotenv}
     local decrypted
 
@@ -25,7 +25,7 @@ use_sops() {
 
 use_sops_if_exists() {
     # same default as use_sops, so a bare `use sops_if_exists` is not a no-op
-    local path=${1:-$PWD/../secrets.yaml}
+    local path=${1:-$direnv_root/.envrcs/.env.secrets.concatenated.sops-encrypted}
     if [ -f "$path" ]; then
         use_sops "$path" "${@:2}"
     fi

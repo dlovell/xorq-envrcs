@@ -1,4 +1,10 @@
 source_env .envrc.nix-config
 
-# use `use flake` for non-mutable install
-use flake
+# No-op when there is no flake to build, so this fragment can stay enabled
+# in a repo that has no flake.nix yet.
+if [ -f "$direnv_root/flake.nix" ]; then
+    # `use flake` for a non-mutable install
+    use flake
+else
+    log_status "no flake.nix in $direnv_root; skipping use flake"
+fi

@@ -10,7 +10,7 @@ direnv configuration split into composable fragments, sourced from the root `.en
 | `.envrc.nix-config` | Bootstraps nix-direnv; where to `watch_file` imported nix modules |
 | `.envrc.secrets.template` | Decrypts `.env.secrets.demo.sops-encrypted`; shows how to add further bundles |
 | `.envrc.user.template` | Default user env: sources `.envrc.user.uv`, loads `.env.local` |
-| `.envrc.user.flake` | User env variant: nix flake (immutable install) |
+| `.envrc.user.flake` | User env variant: nix flake (immutable install); no-ops without a `flake.nix` |
 | `.envrc.user.uv` | User env variant: uv sync + venv activation; no-ops without a `pyproject.toml` |
 | `.env.local.template` | Third layer: per-user, non-secret dotenv values |
 | `.env.secrets.demo.sops-encrypted` | Encrypted demo bundle the secrets layer decrypts |

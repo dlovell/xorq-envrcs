@@ -30,6 +30,8 @@ Never commit these; `.gitignore` covers them.
 
 The repo root also carries demo sops inputs: `secrets.yaml` (dotenv-format,
 encrypted — the default path `use_sops` looks for) and `plain-text.yaml`.
+`secrets.yaml` is a single-bundle *demo*; the intended production shape is
+one concatenated bundle, described below.
 
 ## Auto-create, and how to disable a fragment
 
@@ -87,6 +89,34 @@ status is discarded.
 `use_sops_if_exists` shares `use_sops`' default path (`../secrets.yaml`,
 relative to `.envrcs/`), so a bare `use sops_if_exists` decrypts the default
 bundle instead of silently doing nothing.
+
+### One concatenated bundle
+
+Each `use_sops` costs a sops process and a key-agent round trip, so N bundles
+cost N of them and make `direnv reload` noticeably slower. The intended
+production shape is therefore a single bundle built from many plaintext
+sources, which `.envrc.secrets.template` carries as a commented example.
+
+Encrypted sops files cannot be concatenated — each carries its own metadata
+and MAC, and `cat a.sops b.sops | sops --decrypt` fails with `Error while
+unflattening "lastmodified": Duplicate value`. The merge has to happen on the
+plaintext, encrypted once. Piping keeps the merged plaintext off disk:
+
+```sh
+cat a.env b.env |
+  sops --encrypt --input-type dotenv --output-type dotenv /dev/stdin \
+  > .envrcs/.env.secrets.concatenated.sops-encrypted
+```
+
+sops has no `--stdin` flag, and bare `sops --encrypt` fails with `no file
+specified` despite its help text, so `/dev/stdin` must be named explicitly.
+`--input-type`/`--output-type` are required because there is no filename
+extension to sniff. With no `.sops.yaml` in this repo there are also no
+creation rules, so the recipient must be given as `--pgp <fingerprint>`.
+
+The bundle and its plaintext sources are both covered by the
+`.envrcs/.env.*` ignore rule, i.e. treated as local artifacts rather than
+committed — see the table above.
 
 Do not add `set -x` while debugging this fragment: bash traces `eval` *after*
 expansion, so the decrypted `export` lines land in stderr on every reload.

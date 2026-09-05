@@ -14,13 +14,31 @@ direnv configuration split into composable fragments, sourced from the root `.en
 | `.envrc.user.uv` | User env variant: uv sync + venv activation; no-ops without a `pyproject.toml`, and watches for one appearing |
 | `.env.local.template` | Third layer: per-user, non-secret dotenv values |
 | `.env.secrets.demo.sops-encrypted` | Encrypted demo bundle the secrets layer decrypts |
+| `demo-age-key.txt` | Throwaway private key for the demo bundle — committed on purpose, see below |
 
 The root also tracks `.gitignore.template`, which generates the repo's
 `.gitignore` (see below).
 
 ## Untracked (local / secret)
 
-Never commit these; `.gitignore` covers them.
+Never commit these. The generated `.gitignore` covers them — but only the
+generated one: the root `.envrc` skips the auto-create when the repo already
+has a `.gitignore`, which is the normal case for a repo adopting this layout.
+**If you brought your own `.gitignore`, add these rules to it yourself:**
+
+```gitignore
+.envrcs/.envrc.secrets
+.envrcs/.envrc.user
+.envrcs/.env.*
+!.envrcs/.env.*.template
+!*.sops-encrypted
+```
+
+Until you do, `direnv allow` creates `.envrcs/.envrc.secrets` as an ordinary
+untracked file that `git add -A` will happily stage. By default it holds no
+secret material — just `source_env .envrc.sops` and a `use sops_if_exists`
+line — but it is the documented place to put a literal `export`, and mode
+`600` protects it from other local users, not from git.
 
 | File | Created from | Auto-created? |
 |---|---|---|
@@ -34,6 +52,20 @@ bundle. It is committed because it is encrypted — the plaintext it was built
 from is not, and is covered by the ignore rules. It is a single-bundle
 *demo*; the intended production shape is one concatenated bundle, described
 below.
+
+### The committed demo key
+
+`demo-age-key.txt` is an age **private** key, committed deliberately. A demo
+bundle is only a demo if every clone can decrypt it; encrypting it to one
+person's key would mean a wall of sops errors on `direnv allow` for everyone
+else, and "a fresh clone needs only `direnv allow`" would be false. The key
+guards nothing: the whole plaintext is `secret=value`.
+
+`.envrc.secrets.template` names it as a var-assignment prefix on the one call
+that needs it, so `SOPS_AGE_KEY_FILE` is discarded when the function returns
+and cannot become the default for a real bundle. A real bundle is encrypted
+to the recipients who should read it, and their private keys never enter the
+repo.
 
 ## Auto-create, and how to disable a fragment
 
@@ -90,6 +122,21 @@ non-zero rather than silently producing an environment with no secrets —
 which is what happens if the decrypt runs inside a pipeline, where its exit
 status is discarded.
 
+The `direnv dotenv` parse is captured and checked for the same reason. The
+two parsers do not agree: sops will happily encrypt `NOTE=he said "hi"`, and
+`direnv dotenv` rejects the decrypted result as an invalid line. Piped
+straight into `eval`, that is an empty environment reported as success.
+
+Only `dotenv` bundles are supported. The `output_type` parameter exists to
+reject anything else: the YAML/JSON path it replaces ran `eval` on the
+decrypted payload, which is a syntax error at best and arbitrary command
+execution at worst.
+
+Both helpers need `$direnv_root` to build their default path. If it is unset
+— this fragment reused somewhere that does not export it — they `log_error`
+and return non-zero instead of defaulting to `/.envrcs/...` and quietly
+doing nothing.
+
 `use_sops_if_exists` watches the path *before* testing whether it exists,
 mirroring direnv's own `source_env_if_exists` and `dotenv_if_exists`. A
 missing file is recorded as a watch with `exists:false`, so building the
@@ -117,15 +164,23 @@ plaintext, encrypted once. Piping keeps the merged plaintext off disk:
 
 ```sh
 cat a.env b.env |
-  sops --encrypt --input-type dotenv --output-type dotenv /dev/stdin \
-  > .envrcs/.env.secrets.concatenated.sops-encrypted
+  sops --encrypt --pgp "$FPR" --input-type dotenv --output-type dotenv /dev/stdin \
+  > .envrcs/.env.secrets.concatenated.sops-encrypted.tmp &&
+  mv .envrcs/.env.secrets.concatenated.sops-encrypted{.tmp,}
 ```
 
 sops has no `--stdin` flag, and bare `sops --encrypt` fails with `no file
 specified` despite its help text, so `/dev/stdin` must be named explicitly.
 `--input-type`/`--output-type` are required because there is no filename
 extension to sniff. With no `.sops.yaml` in this repo there are also no
-creation rules, so the recipient must be given as `--pgp <fingerprint>`.
+creation rules, so the recipient must be named — `--pgp <fingerprint>`, or
+`--age <public key>` as the demo bundle uses.
+
+Write through `.tmp` and `mv`: `>` creates the output file before sops runs,
+so a failed encrypt would otherwise leave a truncated bundle that
+`use_sops_if_exists` treats as existing and fails to decrypt on every reload.
+The `.tmp` name stays ignored — `.envrcs/.env.*` matches it and
+`!*.sops-encrypted` does not re-include it.
 
 Plaintext sources are ignored (`.env`, `*.env`, `.envrcs/.env.*`); the
 encrypted bundle is not (`!*.sops-encrypted`). Committing the bundle is what

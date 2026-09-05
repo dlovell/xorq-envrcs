@@ -24,7 +24,9 @@ use_sops() {
 }
 
 use_sops_if_exists() {
-    if [ -f "$1" ]; then
-        use_sops "$@"
+    # same default as use_sops, so a bare `use sops_if_exists` is not a no-op
+    local path=${1:-$PWD/../secrets.yaml}
+    if [ -f "$path" ]; then
+        use_sops "$path" "${@:2}"
     fi
 }

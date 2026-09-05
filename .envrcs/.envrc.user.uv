@@ -1,1 +1,7 @@
-uv sync --all-extras --all-groups && source ../.venv/bin/activate
+# No-op when there is no project to sync, so this fragment can stay enabled
+# in a repo that has no pyproject.toml yet.
+if [ -f "$direnv_root/pyproject.toml" ]; then
+    uv sync --all-extras --all-groups && source "$direnv_root/.venv/bin/activate"
+else
+    log_status "no pyproject.toml in $direnv_root; skipping uv sync"
+fi

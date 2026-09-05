@@ -8,10 +8,10 @@ direnv configuration split into composable fragments, sourced from the root `.en
 |---|---|
 | `.envrc.sops` | Defines `use_sops` and `use_sops_if_exists` for decrypting secrets |
 | `.envrc.nix-config` | Bootstraps nix-direnv; where to `watch_file` imported nix modules |
-| `.envrc.secrets.template` | Shows which sops-encrypted files the secrets layer expects |
+| `.envrc.secrets.template` | Decrypts the demo `../secrets.yaml`; shows how to add further bundles |
 | `.envrc.user.template` | Default user env: sources `.envrc.user.uv`, loads `.env.local` |
 | `.envrc.user.flake` | User env variant: nix flake (immutable install) |
-| `.envrc.user.uv` | User env variant: uv sync + venv activation |
+| `.envrc.user.uv` | User env variant: uv sync + venv activation; no-ops without a `pyproject.toml` |
 | `.env.local.template` | Third layer: per-user, non-secret dotenv values |
 
 The root also tracks `.gitignore.template`, which generates the repo's
@@ -50,6 +50,13 @@ To durably disable a fragment, empty it instead:
 An existing-but-empty file satisfies the auto-create check and is a no-op
 when sourced.
 
+**If you symlinked the local file to its template** instead of copying it,
+do not empty it — you would truncate the tracked template. Replace the
+symlink with a real copy first (`cp --remove-destination
+.envrcs/.envrc.user.template .envrcs/.envrc.user`), or comment out the lines
+you want off. Editing through a symlink shows up as a dirty tracked file in
+`git status`, which is the tell.
+
 ## The three layers
 
 1. **`.envrc.secrets`** — sops-encrypted material. Shell fragment; sources
@@ -76,6 +83,10 @@ reload. A failed `sops --decrypt` is reported via `log_error` and returns
 non-zero rather than silently producing an environment with no secrets —
 which is what happens if the decrypt runs inside a pipeline, where its exit
 status is discarded.
+
+`use_sops_if_exists` shares `use_sops`' default path (`../secrets.yaml`,
+relative to `.envrcs/`), so a bare `use sops_if_exists` decrypts the default
+bundle instead of silently doing nothing.
 
 Do not add `set -x` while debugging this fragment: bash traces `eval` *after*
 expansion, so the decrypted `export` lines land in stderr on every reload.

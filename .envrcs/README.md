@@ -9,7 +9,7 @@ direnv configuration split into composable fragments, sourced from the root `.en
 | `.envrc.sops` | Defines `use_sops` and `use_sops_if_exists` for decrypting secrets |
 | `.envrc.nix-config` | Bootstraps nix-direnv; where to `watch_file` imported nix modules |
 | `.envrc.secrets.template` | Decrypts `.env.secrets.demo.sops-encrypted`; shows how to add further bundles |
-| `.envrc.user.template` | Default user env: sources `.envrc.user.uv`, loads `.env.local` |
+| `.envrc.user.template` | Default user env: loads `.env.local`; both toolchain fragments commented, pick one |
 | `.envrc.user.flake` | User env variant: nix flake (immutable install); no-ops without a `flake.nix`, and watches for one appearing |
 | `.envrc.user.uv` | User env variant: uv sync + venv activation; no-ops without a `pyproject.toml`, and watches for one appearing |
 | `.env.local.template` | Third layer: per-user, non-secret dotenv values |
@@ -27,12 +27,28 @@ has a `.gitignore`, which is the normal case for a repo adopting this layout.
 **If you brought your own `.gitignore`, add these rules to it yourself:**
 
 ```gitignore
+# plaintext secret sources — the ones that actually matter
+.env
+*.env
+.envrcs/.env.*
+
+# auto-created local fragments
 .envrcs/.envrc.secrets
 .envrcs/.envrc.user
-.envrcs/.env.*
+
+# build products of the user layer
+.direnv
+.venv
+/result
+/result-*
+
+# tracked exceptions, and they must come last
 !.envrcs/.env.*.template
 !*.sops-encrypted
 ```
+
+This is the whole of `.gitignore.template` minus its self-ignore line; if the
+two ever drift, that file is the source of truth.
 
 Until you do, `direnv allow` creates `.envrcs/.envrc.secrets` as an ordinary
 untracked file that `git add -A` will happily stage. By default it holds no
@@ -99,6 +115,9 @@ you want off. Editing through a symlink shows up as a dirty tracked file in
    `.envrc.sops` and calls `use_sops_if_exists` per bundle.
 2. **`.envrc.user`** — per-user shell logic: which toolchain to bring up
    (`uv` or `flake`), anything needing conditionals or command substitution.
+   The template ships with both toolchain lines commented out — which one a
+   checkout wants is a per-user choice, and neither fragment is a sensible
+   default to impose. Uncomment one.
 3. **`.env.local`** — per-user, non-secret values. Loaded with
    `dotenv_if_exists`, so it is parsed as `KEY=value` by `direnv dotenv`, not
    sourced as shell.
@@ -163,10 +182,11 @@ unflattening "lastmodified": Duplicate value`. The merge has to happen on the
 plaintext, encrypted once. Piping keeps the merged plaintext off disk:
 
 ```sh
+bundle=.envrcs/.env.secrets.concatenated.sops-encrypted
 cat a.env b.env |
   sops --encrypt --pgp "$FPR" --input-type dotenv --output-type dotenv /dev/stdin \
-  > .envrcs/.env.secrets.concatenated.sops-encrypted.tmp &&
-  mv .envrcs/.env.secrets.concatenated.sops-encrypted{.tmp,}
+  > "$bundle.tmp" &&
+  mv "$bundle.tmp" "$bundle"
 ```
 
 sops has no `--stdin` flag, and bare `sops --encrypt` fails with `no file

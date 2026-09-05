@@ -1,10 +1,18 @@
 source_env .envrc.nix-config
 
+# Watch before the test below, so creating flake.nix later retriggers the
+# reload instead of leaving the fragment skipped until a manual
+# `direnv reload`.
+watch_file "$direnv_root/flake.nix"
+
 # No-op when there is no flake to build, so this fragment can stay enabled
 # in a repo that has no flake.nix yet.
 if [ -f "$direnv_root/flake.nix" ]; then
-    # `use flake` for a non-mutable install
-    use flake
+    # `use flake` for a non-mutable install. The argument is not optional:
+    # this fragment is sourced with PWD at .envrcs/, so a bare `use flake`
+    # would evaluate .envrcs, watch a flake.nix that isn't there, and never
+    # invalidate the cached devShell when the real flake changes.
+    use flake "$direnv_root"
 else
     log_status "no flake.nix in $direnv_root; skipping use flake"
 fi

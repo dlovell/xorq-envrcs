@@ -1,7 +1,16 @@
+# Watch before the test below, so creating pyproject.toml later retriggers
+# the reload instead of leaving the fragment skipped until a manual
+# `direnv reload`.
+watch_file "$direnv_root/pyproject.toml"
+
 # No-op when there is no project to sync, so this fragment can stay enabled
 # in a repo that has no pyproject.toml yet.
 if [ -f "$direnv_root/pyproject.toml" ]; then
-    uv sync --all-extras --all-groups && source "$direnv_root/.venv/bin/activate"
+    # --project for the same reason .envrc.user.flake passes $direnv_root:
+    # this fragment runs with PWD at .envrcs/, and leaning on uv's upward
+    # project discovery would break the moment .envrcs/ grows a pyproject.toml.
+    uv sync --project "$direnv_root" --all-extras --all-groups &&
+        source "$direnv_root/.venv/bin/activate"
 else
     log_status "no pyproject.toml in $direnv_root; skipping uv sync"
 fi

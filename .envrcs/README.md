@@ -221,28 +221,54 @@ with a password that is right in the bundle and wrong in the environment, so
 it surfaces a long way from its cause. Generated passwords are the usual way
 to meet it: `$` is in most "special character" sets.
 
-### Do not name a secret after a shell local
+### Secrets are applied with `declare -gx`, not `export`
 
-A bundle key that collides with a `local` declared anywhere up the call stack
-is silently dropped. bash's `local` is dynamically scoped, so the `export`
-that `direnv dotenv` emits writes that caller's slot, which is destroyed when
-the frame returns. The value never reaches the environment, `use_sops`
-returns 0, and direnv's success line lists the keys that *did* make it.
-
-Six of the names belong to direnv itself and cannot be changed from here:
+`direnv dotenv` emits `export NAME=VAL` for every key in a bundle, and bash's
+`local` is dynamically scoped: an `export` run inside a function writes the
+nearest enclosing frame's slot whenever some caller declared that name
+`local`, and that slot is destroyed when the frame returns. Six such names
+belong to direnv itself and cannot be kept clear from a fragment:
 
 | frame | names |
 |---|---|
 | `use()` | `cmd` |
 | `source_env()` | `rcpath`, `REPLY`, `rcpath_dir`, `rcpath_base`, `rcfile` |
 
-`REPLY` and `cmd` are plausible names for a real secret. `.envrc.sops`'s own
-locals are `_sops_`-prefixed to keep them out of the way, which is why that
-prefix is not cosmetic.
+`REPLY` and `cmd` are plausible names for a real secret, and a bundle key that
+collides with one of them would reach `use_sops`, decrypt, and then be dropped
+on the way out: no value in the environment, `use_sops` returning 0, and
+direnv's success line listing only the keys that made it.
 
-`SCREAMING_SNAKE_CASE` keys avoid five of the six — but not `REPLY`. There is
-no warning for this today; the fix that would remove the hazard entirely is
-to emit `declare -gx` rather than `export`, which assigns at global scope.
+`use_sops` therefore rewrites each emitted statement to `declare -gx
+NAME=VAL`, which assigns at global scope where no enclosing frame can capture
+it. It has to be that one command — `declare -g NAME` followed by `export
+NAME=VAL` writes the caller's slot exactly as a bare `export` does.
+
+That rewrite is a parse rather than a substitution, because `direnv dotenv
+bash` emits one line of `;`-separated statements and spells both names and
+values two ways: bare when it considers every byte safe (uppercase letters,
+digits and `_ - . , / @` among them), and as a `$'...'` literal otherwise. So
+a lowercase key arrives quoted, `export $'cmd'=$'v';`, and an uppercase one
+does not. Inside a `$'...'` literal only `'` and `\` are backslash-escaped,
+which leaves a value free to carry a raw `;` — or the literal text `export`:
+
+```
+plaintext:      SEMI='a;export EVIL=pwned;b'
+direnv emits:   export SEMI=$'a;export EVIL=pwned;b';
+```
+
+Splitting that on `;`, or replacing every `export `, corrupts the value.
+`_sops_globalize` instead walks the statements, skipping each `$'...'` by its
+own escaping rule, and copies name and value bytes through untouched — the
+only edit is each statement's leading keyword. A dump that does not fit that
+grammar is refused (`unrecognized direnv dotenv output`, non-zero return), so
+a change in direnv's output stops the secrets loading loudly instead of
+corrupting a value quietly.
+
+One constraint is left, and it is direnv's rather than bash's: `direnv dotenv`
+accepts keys no shell can assign to, `a.b` and `1a` among them. Those reach
+`declare` and are rejected as `not a valid identifier` on stderr, exactly as
+`export` rejects them.
 
 ### One concatenated bundle
 
@@ -314,7 +340,7 @@ lets a fresh clone reach a working environment without first obtaining the
 plaintext by some other channel.
 
 Do not add `set -x` while debugging this fragment: bash traces `eval` *after*
-expansion, so the decrypted `export` lines land in stderr on every reload.
+expansion, so the decrypted assignments land in stderr on every reload.
 
 ## nix
 

@@ -276,7 +276,12 @@ The recipient must be named — `--pgp <fingerprint>`, or `--age <public key>`
 as the demo bundle uses. There is no `.sops.yaml` here, but sops searches
 upward from the **current directory**, not the repo root, so a `~/.sops.yaml`
 will supply creation rules and the encrypt will quietly succeed against
-whatever recipients that file names. Naming the recipient explicitly is what
+whatever recipients that file names.
+
+A creation rule with no `path_regex` matches *every* input path, `/dev/stdin`
+included — which is exactly the shape a personal `~/.sops.yaml` tends to
+have, and why this recipe appears to work without a recipient flag until
+someone runs it on a machine without that file. Naming the recipient is what
 makes the result depend on the command rather than on where you ran it.
 
 Write through `.tmp` and `mv`: `>` creates the output file before sops runs,
@@ -372,16 +377,11 @@ Recorded here rather than in a tracker so it survives a clone.
 
 **A generator for the concatenated bundle.** The recipe above is written out
 but nothing runs it, so the production shape is a thing you assemble by hand
-every time. Whatever builds it also needs two things the recipe does not have:
-
-- *A staleness story.* When one plaintext source changes, nothing tells you
-  the bundle is out of date. The bundle is watched, so direnv reloads when the
-  bundle changes — but not when its inputs do, and the inputs are ignored
-  files that may not even be on the same machine.
-- *A `.sops.yaml` with creation rules*, so the recipient stops being passed on
-  every encrypt. Note the hazard in the recipe section: sops searches upward
-  from the cwd, so adding one here changes what a recipient-less encrypt does
-  anywhere below it.
+every time. Whatever builds it also needs the thing the recipe does not have:
+*a staleness story*. When one plaintext source changes, nothing tells you the
+bundle is out of date. The bundle itself is watched, so direnv reloads when
+the bundle changes — but not when its inputs do, and the inputs are ignored
+files that may not even be on the same machine.
 
 **An example plaintext source** for that generator. It needs a name the ignore
 rules tolerate: everything matching `.env`, `*.env` or `.envrcs/.env.*` is
@@ -399,9 +399,15 @@ dump can carry `export $'cmd'=$'hello'`, `export QUOTED=$'a b'` and
 `export EMPTY=''`. A rewrite has to handle every name spelling without
 touching values.
 
-Deliberately not done, so it is not mistaken for an oversight: the nix
-`watch_file` in `.envrc.nix-config` stays commented out until this repo has
-nix files worth watching.
+Deliberately not done, so they are not mistaken for oversights:
+
+- The nix `watch_file` in `.envrc.nix-config` stays commented out until this
+  repo has nix files worth watching.
+- **No `.sops.yaml`.** Creation rules would not shorten the recipe anyway:
+  sops matches them against the *input* path, and the recipe's input is
+  `/dev/stdin`, so a rule keyed on the bundle's name never fires. Naming the
+  recipient on the command line is one flag, and it makes the result depend
+  on the command rather than on where it was run.
 
 ## How it fits together
 

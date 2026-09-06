@@ -156,9 +156,9 @@ two parsers do not agree: sops will happily encrypt `NOTE=he said "hi"`, and
 straight into `eval`, that is an empty environment reported as success.
 
 Only `dotenv` bundles are supported. The `output_type` parameter exists to
-reject anything else: the YAML/JSON path it replaces ran `eval` on the
-decrypted payload, which is a syntax error at best and arbitrary command
-execution at worst.
+reject anything else: any other type would have to be `eval`d as shell, and a
+YAML or JSON payload run that way is a syntax error at best and arbitrary
+command execution at worst.
 
 Both helpers need `$direnv_root` to build their default path. If it is unset
 — this fragment reused somewhere that does not export it — they `log_error`
@@ -365,6 +365,43 @@ with its `SOPS_AGE_KEY_FILE=` prefix. Rewrite both for your project before
 your team clones — the generated copies are never overwritten afterwards,
 so a template fix does not reach a checkout that already has one. Whoever
 needs it has to delete their generated file and reload.
+
+## Not done yet
+
+Recorded here rather than in a tracker so it survives a clone.
+
+**A generator for the concatenated bundle.** The recipe above is written out
+but nothing runs it, so the production shape is a thing you assemble by hand
+every time. Whatever builds it also needs two things the recipe does not have:
+
+- *A staleness story.* When one plaintext source changes, nothing tells you
+  the bundle is out of date. The bundle is watched, so direnv reloads when the
+  bundle changes — but not when its inputs do, and the inputs are ignored
+  files that may not even be on the same machine.
+- *A `.sops.yaml` with creation rules*, so the recipient stops being passed on
+  every encrypt. Note the hazard in the recipe section: sops searches upward
+  from the cwd, so adding one here changes what a recipient-less encrypt does
+  anywhere below it.
+
+**An example plaintext source** for that generator. It needs a name the ignore
+rules tolerate: everything matching `.env`, `*.env` or `.envrcs/.env.*` is
+ignored, and only `*.sops-encrypted` is re-included, so an example input has
+to live outside those patterns or be explicitly negated.
+
+**`declare -gx` in place of `export`**, to close the collision hazard in
+[Do not name a secret after a shell local](#do-not-name-a-secret-after-a-shell-local)
+rather than document it. `declare -gx NAME=VAL` assigns at global scope and
+cannot be captured by an enclosing frame; `declare -g NAME` followed by a
+plain `export NAME=VAL` does **not** work, so it has to be the single command.
+What makes it more than a one-line change is that it means rewriting
+`direnv dotenv`'s output, and that output is not uniformly shaped — a single
+dump can carry `export $'cmd'=$'hello'`, `export QUOTED=$'a b'` and
+`export EMPTY=''`. A rewrite has to handle every name spelling without
+touching values.
+
+Deliberately not done, so it is not mistaken for an oversight: the nix
+`watch_file` in `.envrc.nix-config` stays commented out until this repo has
+nix files worth watching.
 
 ## How it fits together
 

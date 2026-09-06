@@ -14,6 +14,11 @@ if [ -f "$direnv_root/pyproject.toml" ]; then
     # project discovery would break the moment .envrcs/ grows a pyproject.toml.
     uv sync --project "$direnv_root" --all-extras --all-groups &&
         source "$direnv_root/.venv/bin/activate"
+    # Re-record uv.lock: the watch above ran before `uv sync`, which is
+    # what writes it, so on a first sync (or any that re-resolves) direnv
+    # would see a stale watch at the very next prompt and do a second full
+    # reload — another uv sync — before settling.
+    watch_file "$direnv_root/uv.lock"
 else
     log_status "no pyproject.toml in $direnv_root; skipping uv sync"
 fi

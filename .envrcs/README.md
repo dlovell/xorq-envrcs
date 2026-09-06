@@ -395,11 +395,14 @@ Recorded here rather than in a tracker so it survives a clone.
 
 **A generator for the concatenated bundle** — worth building only past the
 break-even above. The recipe is written out but nothing runs it, so the
-concatenated shape is a thing you assemble by hand every time. Whatever builds it also needs the thing the recipe does not have:
-*a staleness story*. When one plaintext source changes, nothing tells you the
-bundle is out of date. The bundle itself is watched, so direnv reloads when
-the bundle changes — but not when its inputs do, and the inputs are ignored
-files that may not even be on the same machine.
+concatenated shape is a thing you assemble by hand every time.
+
+Whatever builds it must **reject duplicate keys rather than resolve them**.
+Concatenating two sources that both define `DATABASE_URL` produces a bundle
+sops encrypts without complaint and `direnv dotenv` reads last-wins, so which
+value you get depends on the order the sources were listed and nothing reports
+it. That is a wrong-but-plausible secret — the same failure shape as
+[an unquoted `$` or `#`](#quote-values-containing-).
 
 **An example plaintext source** for that generator. It needs a name the ignore
 rules tolerate: everything matching `.env`, `*.env` or `.envrcs/.env.*` is
@@ -421,6 +424,14 @@ Deliberately not done, so they are not mistaken for oversights:
 
 - The nix `watch_file` in `.envrc.nix-config` stays commented out until this
   repo has nix files worth watching.
+- **No staleness detection between a concatenated bundle and its sources.**
+  When one source changes, nothing tells you the bundle is out of date: the
+  bundle itself is watched, so direnv reloads when the bundle changes, but not
+  when its inputs do. If the sources are committed as individual
+  `*.sops-encrypted` files the drift is invisible, because both sides are
+  ciphertext. Accepted rather than solved — and a check could not run in CI
+  regardless, since verifying the two agree means decrypting both, so it could
+  only ever be a local hook or a habit.
 - **No `.sops.yaml`.** Creation rules would not shorten the recipe anyway:
   sops matches them against the *input* path, and the recipe's input is
   `/dev/stdin`, so a rule keyed on the bundle's name never fires. Naming the

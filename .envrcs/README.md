@@ -11,7 +11,7 @@ direnv configuration split into composable fragments, sourced from the root `.en
 | `.envrc.secrets.template` | Decrypts `.env.secrets.demo.sops-encrypted`; shows how to add further bundles |
 | `.envrc.user.template` | Default user env: loads `.env.local`; both toolchain fragments commented, pick one |
 | `.envrc.user.flake` | User env variant: nix flake (immutable install); no-ops without a `flake.nix`, and watches for one appearing |
-| `.envrc.user.uv` | User env variant: uv sync + venv activation; no-ops without a `pyproject.toml`, and watches for one appearing |
+| `.envrc.user.uv` | User env variant: uv sync + venv activation; guards on `pyproject.toml` existing, not on whether you use uv |
 | `.env.local.template` | Third layer: per-user, non-secret dotenv values |
 | `.env.secrets.demo.sops-encrypted` | Encrypted demo bundle the secrets layer decrypts |
 | `demo-age-key.txt` | Throwaway private key for the demo bundle — committed on purpose, see below |
@@ -99,6 +99,13 @@ To durably disable a fragment, empty it instead:
 ```sh
 > .envrcs/.envrc.user     # skip the user layer entirely
 ```
+
+Note what "entirely" covers: `.env.local` is loaded *by* `.envrc.user`, not
+by the root `.envrc`, so emptying the user layer silently takes the third
+layer with it. The three layers are peers in what they hold, not in how they
+are wired — see the tree at the end of this file. To keep `.env.local` while
+dropping the toolchain, comment out the `source_env` line instead of emptying
+the file.
 
 An existing-but-empty file satisfies the auto-create check and is a no-op
 when sourced.
@@ -194,13 +201,48 @@ DB_PASSWORD='P4ss$word'
 
 Double quotes do **not** work *for this one* — `"P4ss$word"` truncates exactly
 like the bare form, because the expansion happens before the quotes are
-stripped. Single-quoting is the habit to keep, since it is the only form that
-holds for every character.
+stripped.
+
+`#` fails the same way and is more likely still, since it is in every
+generated-password character set:
+
+```
+plaintext:          DB_PASSWORD=P4ss#word
+sops decrypts to:   DB_PASSWORD=P4ss#word
+environment gets:   DB_PASSWORD=P4ss
+```
+
+Here double quotes *do* survive — which is exactly why you should not learn
+the double-quote rule. **Single-quote every value.** It is the only form that
+holds for both characters, and the only one you do not have to think about.
 
 Nothing warns about this. The symptom is a service failing to authenticate
 with a password that is right in the bundle and wrong in the environment, so
 it surfaces a long way from its cause. Generated passwords are the usual way
 to meet it: `$` is in most "special character" sets.
+
+### Do not name a secret after a shell local
+
+A bundle key that collides with a `local` declared anywhere up the call stack
+is silently dropped. bash's `local` is dynamically scoped, so the `export`
+that `direnv dotenv` emits writes that caller's slot, which is destroyed when
+the frame returns. The value never reaches the environment, `use_sops`
+returns 0, and direnv's success line lists the keys that *did* make it.
+
+Six of the names belong to direnv itself and cannot be changed from here:
+
+| frame | names |
+|---|---|
+| `use()` | `cmd` |
+| `source_env()` | `rcpath`, `REPLY`, `rcpath_dir`, `rcpath_base`, `rcfile` |
+
+`REPLY` and `cmd` are plausible names for a real secret. `.envrc.sops`'s own
+locals are `_sops_`-prefixed to keep them out of the way, which is why that
+prefix is not cosmetic.
+
+`SCREAMING_SNAKE_CASE` keys avoid five of the six — but not `REPLY`. There is
+no warning for this today; the fix that would remove the hazard entirely is
+to emit `declare -gx` rather than `export`, which assigns at global scope.
 
 ### One concatenated bundle
 
@@ -276,6 +318,53 @@ costs.
 
 Prefer these over bare relative paths like `../.venv`, which break when the
 evaluation directory isn't what you expect.
+
+## Adopting this layout in another repo
+
+Everything above describes this repo. Adopting the layout elsewhere is a
+different job, and these are its edges.
+
+**Prerequisites.** `direnv` always. `sops`, plus whatever key backend your
+bundles use, only if you keep the secrets layer — and note that a missing
+`sops` fails *quietly*: the fragment logs `sops: command not found` and
+`sops --decrypt failed for ...`, the load continues, and nothing else
+complains. `uv` or `nix` only if you enable that toolchain fragment.
+
+**What to copy.** The root `.envrc`, `.gitignore.template`, and all of
+`.envrcs/` except `demo-age-key.txt` and `.env.secrets.demo.sops-encrypted`
+— those two exist so *this* repo demonstrates itself. Leaving them out is
+safe: the demo line in `.envrc.secrets.template` watches a bundle that isn't
+there and no-ops.
+
+**Fix your `.gitignore` before the first `direnv allow`, not after.** The
+auto-create skips an existing `.gitignore`, so `.envrcs/.envrc.secrets` and
+`.envrcs/.envrc.user` are stageable from the moment they are created. Three
+things to do, in this order:
+
+1. Add the block from [Untracked](#untracked-local--secret) **at the end of
+   your file**. "The negations come last" means last overall, not last within
+   the block — a later `.env*` of your own will re-ignore
+   `.envrcs/.env.*.template` and your committed bundle.
+2. Remove any existing rule that ignores `.envrc`. It is a common one, and
+   this layout needs the root `.envrc` tracked.
+3. Check, rather than assume:
+   ```sh
+   git check-ignore -v .envrc .envrcs/.env.local.template \
+       .envrcs/.env.secrets.demo.sops-encrypted .envrcs/.envrc.secrets
+   ```
+   The first three should print nothing. The last should be ignored.
+
+**If you already have an `.envrc`**, its contents move into the root `.envrc`
+*after* the `export direnv_root` line and *before* the `source_env` calls, or
+into a fragment of your own sourced alongside them. `$direnv_root` and the
+layout-dir default have to be set before anything uses them.
+
+**The tracked templates are placeholders, not content.** `.env.local.template`
+ships `EXAMPLE_*` names; `.envrc.secrets.template` ships the demo bundle line
+with its `SOPS_AGE_KEY_FILE=` prefix. Rewrite both for your project before
+your team clones — the generated copies are never overwritten afterwards,
+so a template fix does not reach a checkout that already has one. Whoever
+needs it has to delete their generated file and reload.
 
 ## How it fits together
 

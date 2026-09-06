@@ -25,9 +25,10 @@ encrypted to a throwaway age key committed beside it — see
 [the demo key](.envrcs/README.md#the-committed-demo-key). Real bundles are
 encrypted to their real recipients, whose private keys stay out of the repo.
 
-Adopting this layout in a repo that already has a `.gitignore`? The
-auto-create skips it, so you must add the ignore rules yourself — they are
-listed under [untracked files](.envrcs/README.md#untracked-local--secret).
+Adopting this layout in another repo? Start at
+[Adopting this layout](.envrcs/README.md#adopting-this-layout-in-another-repo)
+— what to copy, the prerequisites, and the `.gitignore` edges, including
+why the ignore rules have to go in before the first `direnv allow`.
 
 See [`.envrcs/README.md`](.envrcs/README.md) for the fragment-by-fragment
 reference — auto-create rules and how to disable a fragment, the sops

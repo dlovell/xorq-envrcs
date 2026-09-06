@@ -9,8 +9,10 @@
 # This narrows the hole, it does not close it: the frames above us declare
 # locals too — `cmd` in direnv's use(), and rcpath/REPLY/rcpath_dir/
 # rcpath_base/rcfile in source_env() — and those names cannot be changed
-# from here. Closing it properly means emitting `declare -gx` instead of
-# `export`; see notes/notes.txt.
+# from here. Closing it properly means emitting `declare -gx NAME=VAL`,
+# which assigns at global scope and so cannot be captured by an enclosing
+# frame. That needs a careful rewrite of `direnv dotenv`'s output, whose
+# shape is not uniform.
 
 # Shared default bundle path, so a bare `use sops` / `use sops_if_exists` is
 # not a no-op. Fails loudly when direnv_root is unset: this fragment expects

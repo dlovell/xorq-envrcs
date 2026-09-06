@@ -156,9 +156,9 @@ two parsers do not agree: sops will happily encrypt `NOTE=he said "hi"`, and
 straight into `eval`, that is an empty environment reported as success.
 
 Only `dotenv` bundles are supported. The `output_type` parameter exists to
-reject anything else: the YAML/JSON path it replaces ran `eval` on the
-decrypted payload, which is a syntax error at best and arbitrary command
-execution at worst.
+reject anything else: any other type would have to be `eval`d as shell, and a
+YAML or JSON payload run that way is a syntax error at best and arbitrary
+command execution at worst.
 
 Both helpers need `$direnv_root` to build their default path. If it is unset
 — this fragment reused somewhere that does not export it — they `log_error`
@@ -246,12 +246,30 @@ to emit `declare -gx` rather than `export`, which assigns at global scope.
 
 ### One concatenated bundle
 
-Each `use_sops` costs a sops process — and, for PGP recipients, a gpg-agent
-round trip — so N bundles cost N of them and make `direnv reload` noticeably
-slower. The intended
-production shape is therefore a single bundle built from many plaintext
-sources. `.envrc.secrets.template` carries the commented `use sops_if_exists`
-line for it and points here; the recipe below is the only copy.
+Each `use_sops` spawns a sops process, and that spawn is almost the whole
+cost. Measured with sops 3.13.3, median of 7 runs, keys and gpg-agent warm:
+
+| | one bundle | 8 bundles | per extra bundle |
+|---|---|---|---|
+| age | 23 ms | 171 ms | 20 ms |
+| PGP | 36 ms | 272 ms | 33 ms |
+
+Decrypting one bundle costs the same whether it holds 1 key or 8 — the cost
+is per *invocation*, not per secret. A bare sops process with no crypto at
+all is 22 ms, so age decryption is about 1 ms of real work and PGP about 14
+ms. The gpg-agent round trip is therefore a minor term, not the driver; its
+expensive part is starting the agent (~28 ms), and that is once per session
+rather than once per bundle.
+
+**The break-even is three to four sources.** Below that, concatenating saves
+20–35 ms per reload, which nobody perceives, and costs you a build step and
+everything under [Not done yet](#not-done-yet). At eight sources it saves
+150–240 ms on every reload — and a reload fires on every `cd` into the tree,
+so that is the difference between instant and laggy. Concatenate when you
+have many sources; keep separate bundles when you have two.
+
+`.envrc.secrets.template` carries the commented `use sops_if_exists` line for
+the concatenated bundle and points here; the recipe below is the only copy.
 
 Encrypted sops files cannot be concatenated — each carries its own metadata
 and MAC, so feeding two bundles to one `sops --decrypt` fails with a
@@ -276,7 +294,12 @@ The recipient must be named — `--pgp <fingerprint>`, or `--age <public key>`
 as the demo bundle uses. There is no `.sops.yaml` here, but sops searches
 upward from the **current directory**, not the repo root, so a `~/.sops.yaml`
 will supply creation rules and the encrypt will quietly succeed against
-whatever recipients that file names. Naming the recipient explicitly is what
+whatever recipients that file names.
+
+A creation rule with no `path_regex` matches *every* input path, `/dev/stdin`
+included — which is exactly the shape a personal `~/.sops.yaml` tends to
+have, and why this recipe appears to work without a recipient flag until
+someone runs it on a machine without that file. Naming the recipient is what
 makes the result depend on the command rather than on where you ran it.
 
 Write through `.tmp` and `mv`: `>` creates the output file before sops runs,
@@ -365,6 +388,55 @@ with its `SOPS_AGE_KEY_FILE=` prefix. Rewrite both for your project before
 your team clones — the generated copies are never overwritten afterwards,
 so a template fix does not reach a checkout that already has one. Whoever
 needs it has to delete their generated file and reload.
+
+## Not done yet
+
+Recorded here rather than in a tracker so it survives a clone.
+
+**A generator for the concatenated bundle** — worth building only past the
+break-even above. The recipe is written out but nothing runs it, so the
+concatenated shape is a thing you assemble by hand every time.
+
+Whatever builds it must **reject duplicate keys rather than resolve them**.
+Concatenating two sources that both define `DATABASE_URL` produces a bundle
+sops encrypts without complaint and `direnv dotenv` reads last-wins, so which
+value you get depends on the order the sources were listed and nothing reports
+it. That is a wrong-but-plausible secret — the same failure shape as
+[an unquoted `$` or `#`](#quote-values-containing-).
+
+**An example plaintext source** for that generator. It needs a name the ignore
+rules tolerate: everything matching `.env`, `*.env` or `.envrcs/.env.*` is
+ignored, and only `*.sops-encrypted` is re-included, so an example input has
+to live outside those patterns or be explicitly negated.
+
+**`declare -gx` in place of `export`**, to close the collision hazard in
+[Do not name a secret after a shell local](#do-not-name-a-secret-after-a-shell-local)
+rather than document it. `declare -gx NAME=VAL` assigns at global scope and
+cannot be captured by an enclosing frame; `declare -g NAME` followed by a
+plain `export NAME=VAL` does **not** work, so it has to be the single command.
+What makes it more than a one-line change is that it means rewriting
+`direnv dotenv`'s output, and that output is not uniformly shaped — a single
+dump can carry `export $'cmd'=$'hello'`, `export QUOTED=$'a b'` and
+`export EMPTY=''`. A rewrite has to handle every name spelling without
+touching values.
+
+Deliberately not done, so they are not mistaken for oversights:
+
+- The nix `watch_file` in `.envrc.nix-config` stays commented out until this
+  repo has nix files worth watching.
+- **No staleness detection between a concatenated bundle and its sources.**
+  When one source changes, nothing tells you the bundle is out of date: the
+  bundle itself is watched, so direnv reloads when the bundle changes, but not
+  when its inputs do. If the sources are committed as individual
+  `*.sops-encrypted` files the drift is invisible, because both sides are
+  ciphertext. Accepted rather than solved — and a check could not run in CI
+  regardless, since verifying the two agree means decrypting both, so it could
+  only ever be a local hook or a habit.
+- **No `.sops.yaml`.** Creation rules would not shorten the recipe anyway:
+  sops matches them against the *input* path, and the recipe's input is
+  `/dev/stdin`, so a rule keyed on the bundle's name never fires. Naming the
+  recipient on the command line is one flag, and it makes the result depend
+  on the command rather than on where it was run.
 
 ## How it fits together
 

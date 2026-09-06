@@ -36,9 +36,9 @@ use_sops() {
     local _sops_path _sops_output_type=${2:-dotenv} _sops_decrypted _sops_parsed
     _sops_path=$(_sops_bundle_path "${1:-}") || return 1
 
-    # dotenv only. The branch this replaces ran `eval` on the decrypted
-    # payload for any other output type, which for YAML or JSON is a syntax
-    # error at best and arbitrary command execution at worst.
+    # dotenv only. Any other output type would have to be `eval`d as shell,
+    # which for a YAML or JSON payload is a syntax error at best and
+    # arbitrary command execution at worst.
     if [ "$_sops_output_type" != "dotenv" ]; then
         log_error "use_sops: only dotenv bundles are supported (got '$_sops_output_type')"
         return 1

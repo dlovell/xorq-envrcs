@@ -435,17 +435,6 @@ rules tolerate: everything matching `.env`, `*.env` or `.envrcs/.env.*` is
 ignored, and only `*.sops-encrypted` is re-included, so an example input has
 to live outside those patterns or be explicitly negated.
 
-**`declare -gx` in place of `export`**, to close the collision hazard in
-[Do not name a secret after a shell local](#do-not-name-a-secret-after-a-shell-local)
-rather than document it. `declare -gx NAME=VAL` assigns at global scope and
-cannot be captured by an enclosing frame; `declare -g NAME` followed by a
-plain `export NAME=VAL` does **not** work, so it has to be the single command.
-What makes it more than a one-line change is that it means rewriting
-`direnv dotenv`'s output, and that output is not uniformly shaped — a single
-dump can carry `export $'cmd'=$'hello'`, `export QUOTED=$'a b'` and
-`export EMPTY=''`. A rewrite has to handle every name spelling without
-touching values.
-
 Deliberately not done, so they are not mistaken for oversights:
 
 - The nix `watch_file` in `.envrc.nix-config` stays commented out until this

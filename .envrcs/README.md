@@ -246,12 +246,30 @@ to emit `declare -gx` rather than `export`, which assigns at global scope.
 
 ### One concatenated bundle
 
-Each `use_sops` costs a sops process — and, for PGP recipients, a gpg-agent
-round trip — so N bundles cost N of them and make `direnv reload` noticeably
-slower. The intended
-production shape is therefore a single bundle built from many plaintext
-sources. `.envrc.secrets.template` carries the commented `use sops_if_exists`
-line for it and points here; the recipe below is the only copy.
+Each `use_sops` spawns a sops process, and that spawn is almost the whole
+cost. Measured with sops 3.13.3, median of 7 runs, keys and gpg-agent warm:
+
+| | one bundle | 8 bundles | per extra bundle |
+|---|---|---|---|
+| age | 23 ms | 171 ms | 20 ms |
+| PGP | 36 ms | 272 ms | 33 ms |
+
+Decrypting one bundle costs the same whether it holds 1 key or 8 — the cost
+is per *invocation*, not per secret. A bare sops process with no crypto at
+all is 22 ms, so age decryption is about 1 ms of real work and PGP about 14
+ms. The gpg-agent round trip is therefore a minor term, not the driver; its
+expensive part is starting the agent (~28 ms), and that is once per session
+rather than once per bundle.
+
+**The break-even is three to four sources.** Below that, concatenating saves
+20–35 ms per reload, which nobody perceives, and costs you a build step and
+everything under [Not done yet](#not-done-yet). At eight sources it saves
+150–240 ms on every reload — and a reload fires on every `cd` into the tree,
+so that is the difference between instant and laggy. Concatenate when you
+have many sources; keep separate bundles when you have two.
+
+`.envrc.secrets.template` carries the commented `use sops_if_exists` line for
+the concatenated bundle and points here; the recipe below is the only copy.
 
 Encrypted sops files cannot be concatenated — each carries its own metadata
 and MAC, so feeding two bundles to one `sops --decrypt` fails with a
@@ -375,9 +393,9 @@ needs it has to delete their generated file and reload.
 
 Recorded here rather than in a tracker so it survives a clone.
 
-**A generator for the concatenated bundle.** The recipe above is written out
-but nothing runs it, so the production shape is a thing you assemble by hand
-every time. Whatever builds it also needs the thing the recipe does not have:
+**A generator for the concatenated bundle** — worth building only past the
+break-even above. The recipe is written out but nothing runs it, so the
+concatenated shape is a thing you assemble by hand every time. Whatever builds it also needs the thing the recipe does not have:
 *a staleness story*. When one plaintext source changes, nothing tells you the
 bundle is out of date. The bundle itself is watched, so direnv reloads when
 the bundle changes — but not when its inputs do, and the inputs are ignored

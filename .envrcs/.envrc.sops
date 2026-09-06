@@ -1,10 +1,16 @@
 # Every local in this file is _sops_-prefixed on purpose. `direnv dotenv`
-# emits `export <key>=...` for each secret, and `export` on a name that is
-# `local` in the enclosing function marks the *local* for export — the
-# binding is popped when the function returns and never reaches the
-# environment, while use_sops returns 0. A bundle with a key named `path`
-# or `decrypted` would silently go missing. Do not rename these to
-# something a secret might plausibly be called.
+# emits `export <key>=...` for each secret, and bash `local` is dynamically
+# scoped, so that export writes the nearest enclosing frame's slot — which
+# is destroyed when the frame returns. The secret never reaches the
+# environment and use_sops still returns 0. A bundle key named `path` or
+# `decrypted` would silently go missing. Do not rename these to something a
+# secret might plausibly be called.
+#
+# This narrows the hole, it does not close it: the frames above us declare
+# locals too — `cmd` in direnv's use(), and rcpath/REPLY/rcpath_dir/
+# rcpath_base/rcfile in source_env() — and those names cannot be changed
+# from here. Closing it properly means emitting `declare -gx` instead of
+# `export`; see notes/notes.txt.
 
 # Shared default bundle path, so a bare `use sops` / `use sops_if_exists` is
 # not a no-op. Fails loudly when direnv_root is unset: this fragment expects

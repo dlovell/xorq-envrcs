@@ -170,6 +170,35 @@ production bundle below — so a bare `use sops_if_exists` decrypts it instead
 of silently doing nothing. This repo ships no such bundle, so the bare form
 no-ops here and the demo names its file explicitly.
 
+### Quote values containing `$`
+
+`direnv dotenv` expands values the way a shell would, so an unquoted `$` and
+the word after it are treated as a variable reference. The variable is
+almost never set, so the reference expands to nothing and the value is
+**silently truncated** — sops decrypted it correctly, `use_sops` returns 0,
+and direnv reports success:
+
+```
+plaintext:          DB_PASSWORD=P4ss$word
+sops decrypts to:   DB_PASSWORD=P4ss$word
+environment gets:   DB_PASSWORD=P4ss
+```
+
+Single-quote the value in the plaintext, before encrypting. Verified through
+a full sops round trip:
+
+```dotenv
+DB_PASSWORD='P4ss$word'
+```
+
+Double quotes do **not** work — `"P4ss$word"` truncates exactly like the bare
+form, because the expansion happens before the quotes are stripped.
+
+Nothing warns about this. The symptom is a service failing to authenticate
+with a password that is right in the bundle and wrong in the environment, so
+it surfaces a long way from its cause. Generated passwords are the usual way
+to meet it: `$` is in most "special character" sets.
+
 ### One concatenated bundle
 
 Each `use_sops` costs a sops process and a key-agent round trip, so N bundles

@@ -1,0 +1,31 @@
+# Auto-created as `.gitignore` by the root `.envrc`. This template is tracked;
+# the generated `.gitignore` is untracked and ignores itself, so a repo
+# adopting this layout keeps whatever `.gitignore` it already has (the
+# auto-create skips an existing file).
+.gitignore
+
+# Build products of the user layer: .direnv is direnv's own cache, .venv is
+# created by `uv sync`, /result* by a nix build. The last two are anchored
+# with a leading slash: nix only ever writes them at the root, and unanchored
+# they would swallow any directory named result/ anywhere in the tree.
+.direnv
+.venv
+/result
+/result-*
+
+# Local direnv fragments, auto-created from their templates
+.envrcs/.envrc.secrets
+.envrcs/.envrc.user
+
+# Per-user dotenv fragments (third layer) and plaintext secret sources.
+# Plaintext never gets committed, so the wildcard is deliberately broad.
+.envrcs/.env.*
+.env
+*.env
+
+# Tracked exceptions, applied after the rules above:
+#  - the templates, which the wildcard would otherwise hide from a fresh clone
+#  - sops-encrypted bundles: an encrypted artifact is safe to commit, and
+#    committing it is what lets a clone reach a working environment
+!.envrcs/.env.*.template
+!*.sops-encrypted

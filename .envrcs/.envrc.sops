@@ -1,19 +1,82 @@
+# Every local in this file is _sops_-prefixed on purpose. `direnv dotenv`
+# emits `export <key>=...` for each secret, and bash `local` is dynamically
+# scoped, so that export writes the nearest enclosing frame's slot — which
+# is destroyed when the frame returns. The secret never reaches the
+# environment and use_sops still returns 0. A bundle key named `path` or
+# `decrypted` would silently go missing. Do not rename these to something a
+# secret might plausibly be called.
+#
+# This narrows the hole, it does not close it: the frames above us declare
+# locals too — `cmd` in direnv's use(), and rcpath/REPLY/rcpath_dir/
+# rcpath_base/rcfile in source_env() — and those names cannot be changed
+# from here. Closing it properly means emitting `declare -gx NAME=VAL`,
+# which assigns at global scope and so cannot be captured by an enclosing
+# frame. That needs a careful rewrite of `direnv dotenv`'s output, whose
+# shape is not uniform.
+
+# Shared default bundle path, so a bare `use sops` / `use sops_if_exists` is
+# not a no-op. Fails loudly when direnv_root is unset: this fragment expects
+# to be sourced from the root .envrc, and without it the default would
+# silently become /.envrcs/... and the secrets layer would quietly do
+# nothing — the exact failure the rest of this file exists to prevent.
+_sops_bundle_path() {
+    if [ -n "$1" ]; then
+        printf '%s\n' "$1"
+        return 0
+    fi
+    if [ -z "${direnv_root:-}" ]; then
+        log_error "use_sops: no path given and direnv_root is unset; pass a path or source this from the root .envrc"
+        return 1
+    fi
+    printf '%s\n' "$direnv_root/.envrcs/.env.secrets.concatenated.sops-encrypted"
+}
+
 use_sops() {
-    set -x
     # https://github.com/direnv/direnv/wiki/Sops#how-to-encrypt
-    local path=${1:-$PWD/../secrets.yaml}
-    local output_type=${2:-dotenv}
-    if [ "$output_type" = "dotenv" ]; then
-        eval "$(sops --decrypt --input-type dotenv --output-type dotenv "$path" | direnv dotenv bash /dev/stdin)"
-    else
-        eval "$(sops --decrypt --input-type $output_type --output-type $output_type "$path")"
+    local _sops_path _sops_output_type=${2:-dotenv} _sops_decrypted _sops_parsed
+    _sops_path=$(_sops_bundle_path "${1:-}") || return 1
+
+    # dotenv only. The branch this replaces ran `eval` on the decrypted
+    # payload for any other output type, which for YAML or JSON is a syntax
+    # error at best and arbitrary command execution at worst.
+    if [ "$_sops_output_type" != "dotenv" ]; then
+        log_error "use_sops: only dotenv bundles are supported (got '$_sops_output_type')"
+        return 1
     fi
 
-    watch_file "$path"
+    # watch before decrypting: a file that fails to decrypt is still watched,
+    # so fixing it (or the key) retriggers the reload.
+    watch_file "$_sops_path"
+
+    _sops_decrypted=$(sops --decrypt --input-type dotenv --output-type dotenv "$_sops_path") || {
+        log_error "sops --decrypt failed for $_sops_path"
+        return 1
+    }
+
+    # Capture the parse separately rather than piping straight into eval:
+    # inside a pipeline the exit status is discarded, so a bundle that
+    # decrypts but is malformed would eval to nothing and report success.
+    # printf, not echo: echo's treatment of option-like strings and
+    # backslashes depends on shell options (xpg_echo), and printf '%s\n'
+    # is unambiguous.
+    _sops_parsed=$(printf '%s\n' "$_sops_decrypted" | direnv dotenv bash /dev/stdin) || {
+        log_error "direnv dotenv failed to parse $_sops_path"
+        return 1
+    }
+    eval "$_sops_parsed"
 }
 
 use_sops_if_exists() {
-    if [ -f "$1" ]; then
-        use_sops "$@"
+    local _sops_path
+    _sops_path=$(_sops_bundle_path "${1:-}") || return 1
+
+    # watch before the test, mirroring direnv's own source_env_if_exists and
+    # dotenv_if_exists: a missing file is recorded as a watch with
+    # exists:false, so creating the bundle later retriggers the reload
+    # instead of waiting for a manual `direnv reload`.
+    watch_file "$_sops_path"
+
+    if [ -f "$_sops_path" ]; then
+        use_sops "$_sops_path" "${@:2}"
     fi
 }

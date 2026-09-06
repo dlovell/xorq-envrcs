@@ -1,0 +1,11 @@
+# THROWAWAY DEMO KEY — DO NOT COPY THIS PATTERN FOR REAL SECRETS.
+#
+# This private key is committed on purpose. It exists so that any clone can
+# decrypt .env.secrets.demo.sops-encrypted, whose entire plaintext is
+# "secret=value", and see the secrets layer work without first being given
+# a key by some other channel. It protects nothing and guards nothing.
+#
+# A real bundle is encrypted to the recipients who should be able to read
+# it, and their private keys never enter the repo. See .envrcs/README.md.
+# public key: age1907kz2q0vt3zgmkyxecqexlm5ul4gl2j08kfyvtpvmajqzfl4scq6vs7pr
+AGE-SECRET-KEY-1Z2RQ5E20KEH42P5U7C64E8SH2RNCLUSKWSH33NT7ATA29XPMCMRSGK0G87

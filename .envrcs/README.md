@@ -52,10 +52,10 @@ two ever drift, that file is the source of truth.
 
 Until you do, `direnv allow` creates `.envrcs/.envrc.secrets` as an ordinary
 untracked file that `git add -A` will happily stage. By default it holds no
-secret material — just `source_env .envrc.sops` and a `use sops_if_exists`
-line — but it is a shell fragment, so a stray `export SECRET=...` typed into
-it would be staged too, and mode `600` protects it from other local users,
-not from git.
+secret material — `source_env .envrc.sops`, and a `use sops_if_exists` call
+prefixed with `SOPS_AGE_KEY_FILE=...` for the demo bundle — but it is a
+shell fragment, so a stray `export SECRET=...` typed into it would be staged
+too, and mode `600` protects it from other local users, not from git.
 
 | File | Created from | Auto-created? |
 |---|---|---|
@@ -192,8 +192,10 @@ a full sops round trip:
 DB_PASSWORD='P4ss$word'
 ```
 
-Double quotes do **not** work — `"P4ss$word"` truncates exactly like the bare
-form, because the expansion happens before the quotes are stripped.
+Double quotes do **not** work *for this one* — `"P4ss$word"` truncates exactly
+like the bare form, because the expansion happens before the quotes are
+stripped. Single-quoting is the habit to keep, since it is the only form that
+holds for every character.
 
 Nothing warns about this. The symptom is a service failing to authenticate
 with a password that is right in the bundle and wrong in the environment, so
@@ -261,8 +263,11 @@ relative to `.envrcs/`, e.g. `watch_file ../nix/{commands,packages}.nix`.
 PWD is the recurring hazard here. `.envrc.user.flake` runs with PWD at
 `.envrcs/`, and nix-direnv derives three separate things from it — the flake
 expression, the layout dir, and the body of the generated
-`nix-direnv-reload` helper. The fragment passes `$direnv_root` explicitly
-*and* runs from it; the comment on those lines says what each one breaks.
+`nix-direnv-reload` helper. None of the three fails loudly: nix itself
+searches upward and builds the right flake, so a bare `use flake` *works*
+while watching the wrong lock file. The fragment passes `$direnv_root`
+explicitly *and* runs from it; the comment on those lines says what each one
+costs.
 
 ## Path conventions
 

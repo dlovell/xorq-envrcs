@@ -10,7 +10,7 @@ files from their tracked templates, and sources two fragments from
 
 | layer | file | holds |
 |---|---|---|
-| secrets | `.envrcs/.envrc.secrets` | sops-encrypted material |
+| secrets | `.envrcs/.envrc.secrets` | shell: which sops bundles to decrypt |
 | user | `.envrcs/.envrc.user` | per-user shell logic: which toolchain to bring up |
 | local | `.envrcs/.env.local` | per-user, non-secret `KEY=value` |
 

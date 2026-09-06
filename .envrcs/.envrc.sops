@@ -56,8 +56,9 @@ use_sops() {
     # Capture the parse separately rather than piping straight into eval:
     # inside a pipeline the exit status is discarded, so a bundle that
     # decrypts but is malformed would eval to nothing and report success.
-    # printf, not echo, so a payload whose first line begins -n or -e
-    # survives intact.
+    # printf, not echo: echo's treatment of option-like strings and
+    # backslashes depends on shell options (xpg_echo), and printf '%s\n'
+    # is unambiguous.
     _sops_parsed=$(printf '%s\n' "$_sops_decrypted" | direnv dotenv bash /dev/stdin) || {
         log_error "direnv dotenv failed to parse $_sops_path"
         return 1

@@ -53,8 +53,9 @@ two ever drift, that file is the source of truth.
 Until you do, `direnv allow` creates `.envrcs/.envrc.secrets` as an ordinary
 untracked file that `git add -A` will happily stage. By default it holds no
 secret material — just `source_env .envrc.sops` and a `use sops_if_exists`
-line — but it is the documented place to put a literal `export`, and mode
-`600` protects it from other local users, not from git.
+line — but it is a shell fragment, so a stray `export SECRET=...` typed into
+it would be staged too, and mode `600` protects it from other local users,
+not from git.
 
 | File | Created from | Auto-created? |
 |---|---|---|
@@ -126,21 +127,21 @@ you want off. Editing through a symlink shows up as a dirty tracked file in
 mutually exclusive strategies, and silently applying both would leave the
 environment in a state nobody asked for. Copy it and uncomment exactly one.
 
-`.gitignore.template` ignores `.envrcs/.env.*` wholesale, covering any future
-per-user dotenv fragment, with a `!.envrcs/.env.*.template` negation so the
-tracked templates stay visible in a fresh clone. It also ignores what the
-user layer builds — `.direnv`, `.venv` (from `uv sync`) and `/result*` (from
-a nix build, anchored because nix only writes them at the root) — none of
-which belong in a commit.
+The rules that cover all of this, and the reason for each, are in
+`.gitignore.template` itself; the block under
+[Untracked](#untracked-local--secret) above is a copy of it for adopters.
+Both are wholesale rather than per-file, so a future per-user dotenv
+fragment is covered without an edit.
 
 ## sops
 
 `use_sops` watches the encrypted file *before* decrypting, so a file that
 fails to decrypt is still watched and fixing it (or the key) retriggers the
 reload. A failed `sops --decrypt` is reported via `log_error` and returns
-non-zero rather than silently producing an environment with no secrets —
-which is what happens if the decrypt runs inside a pipeline, where its exit
-status is discarded.
+non-zero for callers that check it. direnv evaluates `.envrc` without
+`errexit`, so the load continues either way — what the check buys is the
+error message, instead of the silent empty environment a pipeline gives you
+by discarding the decrypt's exit status.
 
 The `direnv dotenv` parse is captured and checked for the same reason. The
 two parsers do not agree: sops will happily encrypt `NOTE=he said "hi"`, and
@@ -201,14 +202,16 @@ to meet it: `$` is in most "special character" sets.
 
 ### One concatenated bundle
 
-Each `use_sops` costs a sops process and a key-agent round trip, so N bundles
-cost N of them and make `direnv reload` noticeably slower. The intended
+Each `use_sops` costs a sops process — and, for PGP recipients, a gpg-agent
+round trip — so N bundles cost N of them and make `direnv reload` noticeably
+slower. The intended
 production shape is therefore a single bundle built from many plaintext
-sources, which `.envrc.secrets.template` carries as a commented example.
+sources. `.envrc.secrets.template` carries the commented `use sops_if_exists`
+line for it and points here; the recipe below is the only copy.
 
 Encrypted sops files cannot be concatenated — each carries its own metadata
-and MAC, and `cat a.sops b.sops | sops --decrypt` fails with `Error while
-unflattening "lastmodified": Duplicate value`. The merge has to happen on the
+and MAC, so feeding two bundles to one `sops --decrypt` fails with a
+`Duplicate value` unflattening error. The merge has to happen on the
 plaintext, encrypted once. Piping keeps the merged plaintext off disk:
 
 ```sh
@@ -221,10 +224,16 @@ cat a.env b.env |
 
 sops has no `--stdin` flag, and bare `sops --encrypt` fails with `no file
 specified` despite its help text, so `/dev/stdin` must be named explicitly.
-`--input-type`/`--output-type` are required because there is no filename
-extension to sniff. With no `.sops.yaml` in this repo there are also no
-creation rules, so the recipient must be named — `--pgp <fingerprint>`, or
-`--age <public key>` as the demo bundle uses.
+`--input-type`/`--output-type` matter because there is no filename extension
+to sniff: without them sops succeeds but writes a JSON/binary bundle that
+`use_sops` cannot parse.
+
+The recipient must be named — `--pgp <fingerprint>`, or `--age <public key>`
+as the demo bundle uses. There is no `.sops.yaml` here, but sops searches
+upward from the **current directory**, not the repo root, so a `~/.sops.yaml`
+will supply creation rules and the encrypt will quietly succeed against
+whatever recipients that file names. Naming the recipient explicitly is what
+makes the result depend on the command rather than on where you ran it.
 
 Write through `.tmp` and `mv`: `>` creates the output file before sops runs,
 so a failed encrypt would otherwise leave a truncated bundle that
@@ -249,11 +258,11 @@ explicit `watch_file`, which the fragment carries commented out — this repo
 ships no nix files, so the line is documentation until it does. Its paths are
 relative to `.envrcs/`, e.g. `watch_file ../nix/{commands,packages}.nix`.
 
-For the same reason, `.envrc.user.flake` calls `use flake "$direnv_root"`
-and not a bare `use flake`. The fragment runs with PWD at `.envrcs/`, and
-nix-direnv's `use_flake` defaults its flake expression to `.` — so the bare
-form evaluates `.envrcs`, records `MISSING .envrcs/flake.nix` in
-`DIRENV_WATCHES`, and never notices a change to the real flake.
+PWD is the recurring hazard here. `.envrc.user.flake` runs with PWD at
+`.envrcs/`, and nix-direnv derives three separate things from it — the flake
+expression, the layout dir, and the body of the generated
+`nix-direnv-reload` helper. The fragment passes `$direnv_root` explicitly
+*and* runs from it; the comment on those lines says what each one breaks.
 
 ## Path conventions
 

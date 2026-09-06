@@ -1,26 +1,23 @@
 source_env .envrc.nix-config
 
-# Watch before the test below, so creating flake.nix later retriggers the
-# reload instead of leaving the fragment skipped until a manual
-# `direnv reload`.
+# Watch before the test, so a flake.nix added later retriggers the reload.
+# See .envrcs/README.md, "sops", for why watch-before-test is the rule.
 watch_file "$direnv_root/flake.nix"
 
 # No-op when there is no flake to build, so this fragment can stay enabled
 # in a repo that has no flake.nix yet.
 if [ -f "$direnv_root/flake.nix" ]; then
-    # `use flake` for a non-mutable install. The argument is not optional:
-    # this fragment is sourced with PWD at .envrcs/, so a bare `use flake`
-    # would evaluate .envrcs, watch a flake.nix that isn't there, and never
-    # invalidate the cached devShell when the real flake changes.
-    # Run from the root, not from .envrcs/. direnv resolves its layout dir
-    # as ${direnv_layout_dir:-$PWD/.direnv}, and the wiki's popular
-    # cache-relocation snippet redefines direnv_layout_dir as a function
-    # keyed on $PWD, which ignores the variable the root .envrc sets. Either
-    # way the flake profile and its nix GC root would otherwise be keyed on
-    # .envrcs/ while .venv sits at the root. It also fixes the generated
-    # nix-direnv-reload helper: _nix_direnv_preflight bakes $PWD into it as
-    # `direnv exec "$PWD" true`, which pointed at .envrcs/ — a directory
-    # with no .envrc, so the helper could not work at all.
+    # The argument is not optional: nix-direnv's use_flake defaults its
+    # expression to ".", and this fragment runs with PWD at .envrcs/, so a
+    # bare `use flake` would evaluate .envrcs and watch a flake.nix that
+    # isn't there.
+    #
+    # Running from the root matters separately, because nix-direnv derives
+    # more than the flake expression from PWD. See .envrc for the layout-dir
+    # half. The other half is the generated nix-direnv-reload helper, whose
+    # body bakes in $PWD at generation time: from .envrcs/ its
+    # `touch "$PWD/.envrc"` would *create* a stray .envrcs/.envrc, which
+    # direnv then finds instead of the root one and refuses as unallowed.
     pushd "$direnv_root" >/dev/null || return 1
     use flake "$direnv_root"
     popd >/dev/null

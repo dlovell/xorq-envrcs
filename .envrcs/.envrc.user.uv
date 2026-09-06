@@ -1,8 +1,8 @@
-# Watch before the test below, so creating pyproject.toml later retriggers
-# the reload instead of leaving the fragment skipped until a manual
-# `direnv reload`. uv.lock too: a pull that bumps pinned versions touches
-# only the lock, and without a watch the venv would go quietly stale.
-# (The flake fragment needs no equivalent — nix-direnv watches flake.lock.)
+# Watch before the test, so a pyproject.toml added later retriggers the
+# reload; see .envrcs/README.md, "sops", for why that is the rule. uv.lock
+# too, so a pull that bumps pinned versions re-syncs rather than leaving a
+# stale venv. (nix-direnv watches flake.lock itself, so the flake fragment
+# needs no equivalent.)
 watch_file "$direnv_root/pyproject.toml"
 watch_file "$direnv_root/uv.lock"
 

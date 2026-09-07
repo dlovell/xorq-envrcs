@@ -244,13 +244,35 @@ NAME=VAL`, which assigns at global scope where no enclosing frame can capture
 it. It has to be that one command — `declare -g NAME` followed by `export
 NAME=VAL` writes the caller's slot exactly as a bare `export` does.
 
+**Do not name a secret `REPLY` anyway.** The rewrite gets it into the
+environment, and that is the problem: `REPLY` is where bash puts the result of
+a `read` with no variable name, and of a `select`. Any such `read` in any
+function the shell later runs overwrites it — and because the value is now
+*exported*, the wrong one propagates to every child process:
+
+```
+export REPLY=SECRET; read <<< clobbered; printenv REPLY   →  clobbered
+```
+
+Bash-completion functions call bare `read` routinely, so this is not exotic:
+the secret loads correctly, works for a while, and then quietly turns into
+some unrelated string — the same wrong-but-plausible-value failure as [an
+unquoted `$` or `#`](#quote-values-containing-), and no rewrite can prevent
+it. Only the name can. The other five names above are shell-neutral and are
+safe to use as keys.
+
 That rewrite is a parse rather than a substitution, because `direnv dotenv
 bash` emits one line of `;`-separated statements and spells both names and
-values two ways: bare when it considers every byte safe (uppercase letters,
-digits and `_ - . , / @` among them), and as a `$'...'` literal otherwise. So
-a lowercase key arrives quoted, `export $'cmd'=$'v';`, and an uppercase one
-does not. Inside a `$'...'` literal only `'` and `\` are backslash-escaped,
-which leaves a value free to carry a raw `;` — or the literal text `export`:
+values three ways: bare when it considers every byte safe (uppercase letters,
+digits and `_ - . , / @` among them), `''` for the empty string, and a
+`$'...'` literal otherwise. So a lowercase key arrives quoted, `export
+$'cmd'=$'v';`, and an uppercase one does not.
+
+Inside a `$'...'` literal a backslash escapes the character after it — `\'`
+and `\\`, but also `\n`, `\t`, `\r` and `\xNN`, since direnv will not emit
+those bytes raw — and an unescaped `'` closes it. Nothing else in there is
+escaped, which leaves a value free to carry a raw `;`, or the literal text
+`export`:
 
 ```
 plaintext:      SEMI='a;export EVIL=pwned;b'
@@ -258,17 +280,54 @@ direnv emits:   export SEMI=$'a;export EVIL=pwned;b';
 ```
 
 Splitting that on `;`, or replacing every `export `, corrupts the value.
-`_sops_globalize` instead walks the statements, skipping each `$'...'` by its
-own escaping rule, and copies name and value bytes through untouched — the
-only edit is each statement's leading keyword. A dump that does not fit that
-grammar is refused (`unrecognized direnv dotenv output`, non-zero return), so
-a change in direnv's output stops the secrets loading loudly instead of
-corrupting a value quietly.
+`_sops_globalize` instead walks the statements, skipping each quoted literal
+by its own closing rule, and copies name and value bytes through untouched —
+the only edit is each statement's leading keyword. The two quoted forms need
+separate rules and cannot share one: a `$'...'` closes at the first `'`
+preceded by an even-length run of backslashes, whereas a POSIX `'...'` has no
+escapes at all, so `'a\'` is a complete value ending in a backslash. direnv
+emits `''` only for the empty string today, which makes the difference
+unobservable — which is why it is written down rather than left to be
+rediscovered.
 
-One constraint is left, and it is direnv's rather than bash's: `direnv dotenv`
-accepts keys no shell can assign to, `a.b` and `1a` among them. Those reach
-`declare` and are rejected as `not a valid identifier` on stderr, exactly as
-`export` rejects them.
+Whitespace between the pieces is skipped rather than required to be absent.
+direnv emits exactly one space after `export` and nothing around the `;`, but
+a value can only ever carry whitespace inside a quoted literal, so tolerating
+it costs nothing in safety and keeps a purely cosmetic reformatting of
+direnv's output from disabling the secrets layer on an upgrade. Whitespace
+around the `=` is still rejected, because `export A = 1` is a different
+command rather than a differently formatted one.
+
+A dump that still does not fit the grammar is refused (`unrecognized direnv
+dotenv output`, non-zero return) rather than guessed at. Note what that
+refusal looks like from outside: `use_sops` returns 1, the error prints, and
+direnv still exits 0 — the shell loads with **no secrets at all**, and the
+message appears only on the reload that re-evaluates the `.envrc`, not on
+later `cd`s into the tree. Loud beats corrupting a value quietly, but it is
+not loud on every entry.
+
+Two constraints are left, and both are direnv's rather than bash's, because
+`direnv dotenv` accepts keys that bash will not assign to:
+
+- **Not identifiers.** `a.b` and `1a` among them. These reach `declare` and
+  are rejected as `not a valid identifier` on stderr, exactly as `export`
+  rejects them.
+- **Identifiers bash reserves.** `UID`, `EUID`, `PPID`, `BASHPID` and
+  `SHELLOPTS` are readonly, so `declare -gx UID=1` fails with `readonly
+  variable` — again exactly as `export UID=1` does. `IFS` and `PATH` are not
+  readonly and so are worse: they are accepted and applied, and an exported
+  global `IFS` changes word splitting for the remainder of that direnv
+  evaluation.
+
+Either way the failure is per-key rather than fatal, because every statement
+runs in one `eval`: the bad key prints its error, every other key still
+loads, and `eval` reports the status of the *last* statement it ran. So
+`use_sops` returns non-zero only when the bad key happens to be the last one
+emitted — and the emission order is neither the bundle's order nor a stable
+one, since direnv iterates a Go map and Go randomizes that per run. The same
+bundle therefore reports success or failure at random from one reload to the
+next while loading exactly the same secrets. Fix the key; do not read
+`use_sops`'s exit status as a check on the bundle.
 
 ### One concatenated bundle
 

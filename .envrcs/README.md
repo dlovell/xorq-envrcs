@@ -221,28 +221,113 @@ with a password that is right in the bundle and wrong in the environment, so
 it surfaces a long way from its cause. Generated passwords are the usual way
 to meet it: `$` is in most "special character" sets.
 
-### Do not name a secret after a shell local
+### Secrets are applied with `declare -gx`, not `export`
 
-A bundle key that collides with a `local` declared anywhere up the call stack
-is silently dropped. bash's `local` is dynamically scoped, so the `export`
-that `direnv dotenv` emits writes that caller's slot, which is destroyed when
-the frame returns. The value never reaches the environment, `use_sops`
-returns 0, and direnv's success line lists the keys that *did* make it.
-
-Six of the names belong to direnv itself and cannot be changed from here:
+`direnv dotenv` emits `export NAME=VAL` for every key in a bundle, and bash's
+`local` is dynamically scoped: an `export` run inside a function writes the
+nearest enclosing frame's slot whenever some caller declared that name
+`local`, and that slot is destroyed when the frame returns. Six such names
+belong to direnv itself and cannot be kept clear from a fragment:
 
 | frame | names |
 |---|---|
 | `use()` | `cmd` |
 | `source_env()` | `rcpath`, `REPLY`, `rcpath_dir`, `rcpath_base`, `rcfile` |
 
-`REPLY` and `cmd` are plausible names for a real secret. `.envrc.sops`'s own
-locals are `_sops_`-prefixed to keep them out of the way, which is why that
-prefix is not cosmetic.
+`REPLY` and `cmd` are plausible names for a real secret, and a bundle key that
+collides with one of them would reach `use_sops`, decrypt, and then be dropped
+on the way out: no value in the environment, `use_sops` returning 0, and
+direnv's success line listing only the keys that made it.
 
-`SCREAMING_SNAKE_CASE` keys avoid five of the six — but not `REPLY`. There is
-no warning for this today; the fix that would remove the hazard entirely is
-to emit `declare -gx` rather than `export`, which assigns at global scope.
+`use_sops` therefore rewrites each emitted statement to `declare -gx
+NAME=VAL`, which assigns at global scope where no enclosing frame can capture
+it. It has to be that one command — `declare -g NAME` followed by `export
+NAME=VAL` writes the caller's slot exactly as a bare `export` does.
+
+**Do not name a secret `REPLY` anyway.** The rewrite gets it into the
+environment, and that is the problem: `REPLY` is where bash puts the result of
+a `read` with no variable name, and of a `select`. Any such `read` in any
+function the shell later runs overwrites it — and because the value is now
+*exported*, the wrong one propagates to every child process:
+
+```
+export REPLY=SECRET; read <<< clobbered; printenv REPLY   →  clobbered
+```
+
+Bash-completion functions call bare `read` routinely, so this is not exotic:
+the secret loads correctly, works for a while, and then quietly turns into
+some unrelated string — the same wrong-but-plausible-value failure as [an
+unquoted `$` or `#`](#quote-values-containing-), and no rewrite can prevent
+it. Only the name can. The other five names above are shell-neutral and are
+safe to use as keys.
+
+That rewrite is a parse rather than a substitution, because `direnv dotenv
+bash` emits one line of `;`-separated statements and spells both names and
+values three ways: bare when it considers every byte safe (uppercase letters,
+digits and `_ - . , / @` among them), `''` for the empty string, and a
+`$'...'` literal otherwise. So a lowercase key arrives quoted, `export
+$'cmd'=$'v';`, and an uppercase one does not.
+
+Inside a `$'...'` literal a backslash escapes the character after it — `\'`
+and `\\`, but also `\n`, `\t`, `\r` and `\xNN`, since direnv will not emit
+those bytes raw — and an unescaped `'` closes it. Nothing else in there is
+escaped, which leaves a value free to carry a raw `;`, or the literal text
+`export`:
+
+```
+plaintext:      SEMI='a;export EVIL=pwned;b'
+direnv emits:   export SEMI=$'a;export EVIL=pwned;b';
+```
+
+Splitting that on `;`, or replacing every `export `, corrupts the value.
+`_sops_globalize` instead walks the statements, skipping each quoted literal
+by its own closing rule, and copies name and value bytes through untouched —
+the only edit is each statement's leading keyword. The two quoted forms need
+separate rules and cannot share one: a `$'...'` closes at the first `'`
+preceded by an even-length run of backslashes, whereas a POSIX `'...'` has no
+escapes at all, so `'a\'` is a complete value ending in a backslash. direnv
+emits `''` only for the empty string today, which makes the difference
+unobservable — which is why it is written down rather than left to be
+rediscovered.
+
+Whitespace between the pieces is skipped rather than required to be absent.
+direnv emits exactly one space after `export` and nothing around the `;`, but
+a value can only ever carry whitespace inside a quoted literal, so tolerating
+it costs nothing in safety and keeps a purely cosmetic reformatting of
+direnv's output from disabling the secrets layer on an upgrade. Whitespace
+around the `=` is still rejected, because `export A = 1` is a different
+command rather than a differently formatted one.
+
+A dump that still does not fit the grammar is refused (`unrecognized direnv
+dotenv output`, non-zero return) rather than guessed at. Note what that
+refusal looks like from outside: `use_sops` returns 1, the error prints, and
+direnv still exits 0 — the shell loads with **no secrets at all**, and the
+message appears only on the reload that re-evaluates the `.envrc`, not on
+later `cd`s into the tree. Loud beats corrupting a value quietly, but it is
+not loud on every entry.
+
+Two constraints are left, and both are direnv's rather than bash's, because
+`direnv dotenv` accepts keys that bash will not assign to:
+
+- **Not identifiers.** `a.b` and `1a` among them. These reach `declare` and
+  are rejected as `not a valid identifier` on stderr, exactly as `export`
+  rejects them.
+- **Identifiers bash reserves.** `UID`, `EUID`, `PPID`, `BASHPID` and
+  `SHELLOPTS` are readonly, so `declare -gx UID=1` fails with `readonly
+  variable` — again exactly as `export UID=1` does. `IFS` and `PATH` are not
+  readonly and so are worse: they are accepted and applied, and an exported
+  global `IFS` changes word splitting for the remainder of that direnv
+  evaluation.
+
+Either way the failure is per-key rather than fatal, because every statement
+runs in one `eval`: the bad key prints its error, every other key still
+loads, and `eval` reports the status of the *last* statement it ran. So
+`use_sops` returns non-zero only when the bad key happens to be the last one
+emitted — and the emission order is neither the bundle's order nor a stable
+one, since direnv iterates a Go map and Go randomizes that per run. The same
+bundle therefore reports success or failure at random from one reload to the
+next while loading exactly the same secrets. Fix the key; do not read
+`use_sops`'s exit status as a check on the bundle.
 
 ### One concatenated bundle
 
@@ -314,7 +399,7 @@ lets a fresh clone reach a working environment without first obtaining the
 plaintext by some other channel.
 
 Do not add `set -x` while debugging this fragment: bash traces `eval` *after*
-expansion, so the decrypted `export` lines land in stderr on every reload.
+expansion, so the decrypted assignments land in stderr on every reload.
 
 ## nix
 
@@ -408,17 +493,6 @@ it. That is a wrong-but-plausible secret — the same failure shape as
 rules tolerate: everything matching `.env`, `*.env` or `.envrcs/.env.*` is
 ignored, and only `*.sops-encrypted` is re-included, so an example input has
 to live outside those patterns or be explicitly negated.
-
-**`declare -gx` in place of `export`**, to close the collision hazard in
-[Do not name a secret after a shell local](#do-not-name-a-secret-after-a-shell-local)
-rather than document it. `declare -gx NAME=VAL` assigns at global scope and
-cannot be captured by an enclosing frame; `declare -g NAME` followed by a
-plain `export NAME=VAL` does **not** work, so it has to be the single command.
-What makes it more than a one-line change is that it means rewriting
-`direnv dotenv`'s output, and that output is not uniformly shaped — a single
-dump can carry `export $'cmd'=$'hello'`, `export QUOTED=$'a b'` and
-`export EMPTY=''`. A rewrite has to handle every name spelling without
-touching values.
 
 Deliberately not done, so they are not mistaken for oversights:
 

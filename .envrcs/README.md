@@ -9,9 +9,11 @@ direnv configuration split into composable fragments, sourced from the root `.en
 | `.envrc.sops` | Defines `use_sops` and `use_sops_if_exists` for decrypting secrets |
 | `.envrc.nix-config` | Bootstraps nix-direnv; where to `watch_file` imported nix modules |
 | `.envrc.secrets.template` | Decrypts `.env.secrets.demo.sops-encrypted`; shows how to add further bundles |
-| `.envrc.user.template` | Default user env: loads `.env.local`; both toolchain fragments commented, pick one |
+| `.envrc.user.template` | Default user env: loads `.env.local`; both toolchain fragments commented, pick one; kenn layer commented, optional |
 | `.envrc.user.flake` | User env variant: nix flake (immutable install); no-ops without a `flake.nix`, and watches for one appearing |
 | `.envrc.user.uv` | User env variant: uv sync + venv activation; guards on `pyproject.toml` existing, not on whether you use uv |
+| `.envrc.user.kenn` | Additive user layer: kenn-io toolkit (kata, kwt, roborev, ...) on PATH from the devcontainer flake |
+| `kenn.rev` | The one devcontainer revision `.envrc.user.kenn` builds from |
 | `.env.local.template` | Third layer: per-user, non-secret dotenv values |
 | `.env.secrets.demo.sops-encrypted` | Encrypted demo bundle the secrets layer decrypts |
 | `demo-age-key.txt` | Throwaway private key for the demo bundle — committed on purpose, see below |
@@ -419,6 +421,49 @@ while watching the wrong lock file. The fragment passes `$direnv_root`
 explicitly *and* runs from it; the comment on those lines says what each one
 costs.
 
+## kenn
+
+`.envrc.user.kenn` puts the kenn-io toolkit — the tool stack the
+devcontainer image ships — on PATH on the host. Opt in by adding (or
+uncommenting) `source_env .envrc.user.kenn` in `.envrc.user`; it layers on top of either toolchain fragment, or on
+none.
+
+**A PATH layer, not `use flake`.** nix-direnv's `use flake`/`use nix`
+delete `{nix,flake}-profile*` in the layout dir on every cache miss, and all
+fragments share one layout dir, so a second `use flake` beside
+`.envrc.user.flake` evicts the other's cache on every load (nix-direnv 3.0.5:
+both print `Renewed cache`). `nix build --out-link kenn-toolkit` + `PATH_add`
+sits outside that glob and doubles as the GC root.
+
+**Pinned.** `kenn.rev` holds one full devcontainer commit, and the fragment
+builds `github:xorq-labs/devcontainer/<rev>?dir=nix/kenn`. The pin lives in
+a file rather than in the fragment so that anything else needing the same
+toolkit — CI, say — can read the same revision. An empty or missing
+`kenn.rev` is an error, not a fall back to devcontainer's default branch.
+To try an upgrade before moving the pin, export `KENN_REV` (a commit, tag, or
+slash-free branch); it persists across reloads until unset:
+
+```sh
+export KENN_REV=main; direnv reload   # try it
+unset KENN_REV; direnv reload         # back to the pin
+```
+
+A bump is a change to `kenn.rev` alone. The file is watched, so moving it
+rebuilds on the next load.
+
+**If a build fails** — offline, or GitHub unreachable — the fragment keeps
+the previously built toolkit and says so. The layer comes up empty, with a
+`log_error`, only when nothing has been built yet or the pin is empty.
+
+**Free by default.** `kenn-io-toolkit-all` adds `kenn-forge` (Elastic-2.0,
+unfree; the flake's own `allowUnfreePredicate` covers it, so switching
+`kenn_attr` is the whole change). That is a licensing call, so it is not the
+default.
+
+It needs `nix` with network access to GitHub on the first load, and nothing
+else: no devcontainer checkout, and no nix-direnv. There is no cache: every
+load re-evaluates the flake (a few seconds), offline after the first.
+
 ## Path conventions
 
 - **`$direnv_root`** — exported by the root `.envrc`; points to the repo root. Use it for paths that must survive worktree copies (e.g. `$direnv_root/.venv`), and for anything a helper would otherwise resolve against PWD (e.g. `use flake "$direnv_root"`).
@@ -522,6 +567,7 @@ Deliberately not done, so they are not mistaken for oversights:
 │   └── .envrc.sops → use_sops on encrypted .env files
 └── source_env_if_exists .envrcs/.envrc.user
     ├── one of: .envrc.user.{uv,flake}
+    ├── optionally also: .envrc.user.kenn → kenn-io toolkit on PATH
     └── dotenv_if_exists .env.local → per-user non-secret values, if configured
 ```
 

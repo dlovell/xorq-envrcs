@@ -4,4 +4,7 @@
 # source_env .envrc.user.uv
 # source_env .envrc.user.flake
 
+# Optional, additive to either choice above: kenn-io toolkit on PATH.
+# source_env .envrc.user.kenn
+
 dotenv_if_exists .env.local

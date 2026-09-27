@@ -1,36 +1,33 @@
-# kenn-io toolkit -- kata, kwt, roborev, agentsview, docbank, msgvault -- on
-# PATH, built from the nix/kenn flake in xorq-labs/devcontainer at the
-# revision in .envrcs/kenn.rev. Additive: source it alongside .envrc.user.uv or
-# .envrc.user.flake, not instead of them. See .envrcs/README.md, "kenn", for
-# why this is a PATH layer rather than `use flake`, and how the pin moves.
+# kenn-io toolkit on PATH, built from xorq-labs/devcontainer nix/kenn at the
+# revision in kenn.rev. Additive to .envrc.user.{uv,flake}. Why a PATH layer
+# rather than `use flake`: .envrcs/README.md, "kenn".
 
 # Watch before reading, so moving the pin retriggers the reload.
 watch_file "$direnv_root/.envrcs/kenn.rev"
 
-# KENN_REV overrides the pin, for trying an upgrade before moving it:
-# `KENN_REV=main direnv reload`. An empty pin is an error, never a quiet
-# fall back to floating on devcontainer's default branch.
+# KENN_REV overrides the pin: a commit, tag, or slash-free branch. Export it;
+# a one-shot `KENN_REV=x direnv reload` never reaches the eval. Empty pin
+# refuses: `github:owner/repo/` would silently float on the default branch.
 kenn_rev="${KENN_REV:-$(cat "$direnv_root/.envrcs/kenn.rev" 2>/dev/null || true)}"
 kenn_rev="${kenn_rev%%[[:space:]]*}"
 kenn_flake="github:xorq-labs/devcontainer/${kenn_rev}?dir=nix/kenn"
-# kenn-io-toolkit-all adds kenn-forge, which is unfree (Elastic-2.0). Opting
-# into it is a licensing call, so it is not this template's default.
+# Not -all: it adds kenn-forge (unfree, Elastic-2.0), a licensing call rather
+# than a template default.
 kenn_attr="kenn-io-toolkit"
 kenn_link="$(direnv_layout_dir)/kenn-toolkit"
 
 kenn_layer() {
     PATH_add "$kenn_link/bin"
-    # :- not :+ -- an unset XDG_DATA_DIRS means this default to its readers,
-    # so :+ would drop /usr/share rather than prepend to it.
+    # share/ holds the tools' shell completions. :- with the spec default, not
+    # :+: unset means /usr/local/share:/usr/share to readers, and :+ drops it.
     export XDG_DATA_DIRS="$kenn_link/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 }
 
+mkdir -p "$(direnv_layout_dir)"
 # --out-link, not --no-link: the link is the toolkit's GC root, and its name
 # stays outside the {nix,flake}-profile* glob nix-direnv deletes. The -d test
 # follows the symlink, so a collected store path falls through to the error.
-# --extra-experimental-features because nothing else here enables flakes for
-# a bare `nix` call.
-mkdir -p "$(direnv_layout_dir)"
+# --extra-experimental-features: the user's nix.conf may not enable flakes.
 if [ -z "$kenn_rev" ]; then
     log_error "kenn: no revision -- restore .envrcs/kenn.rev, or set KENN_REV to build unpinned"
 elif nix --extra-experimental-features 'nix-command flakes' \

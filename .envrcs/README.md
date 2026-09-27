@@ -424,30 +424,28 @@ costs.
 ## kenn
 
 `.envrc.user.kenn` puts the kenn-io toolkit — the tool stack the
-devcontainer image ships — on PATH on the host. Opt in by uncommenting its
-line in `.envrc.user`; it layers on top of either toolchain fragment, or on
+devcontainer image ships — on PATH on the host. Opt in by adding (or
+uncommenting) `source_env .envrc.user.kenn` in `.envrc.user`; it layers on top of either toolchain fragment, or on
 none.
 
-**A PATH layer, not `use flake`.** It runs `nix build --out-link` and
-`PATH_add`s the result instead of entering the flake's devShell. On a cache
-miss nix-direnv's `use nix` and `use flake` both delete
-`{nix,flake}-profile*` in the layout dir, and with a stock direnvrc the root
-`.envrc` gives every fragment the same one. A second `use flake` beside
-`.envrc.user.flake` therefore wipes that fragment's cached shell and has its
-own wiped in turn: tried with nix-direnv 3.0.5, both layers print `Renewed
-cache` on every load, where the PATH layer leaves the flake shell on `Using
-cached dev shell`. `kenn-toolkit` sits outside that glob and is also the
-build's GC root. Do not "simplify" it back into `use flake`.
+**A PATH layer, not `use flake`.** nix-direnv's `use flake`/`use nix`
+delete `{nix,flake}-profile*` in the layout dir on every cache miss, and all
+fragments share one layout dir, so a second `use flake` beside
+`.envrc.user.flake` evicts the other's cache on every load (nix-direnv 3.0.5:
+both print `Renewed cache`). `nix build --out-link kenn-toolkit` + `PATH_add`
+sits outside that glob and doubles as the GC root.
 
 **Pinned.** `kenn.rev` holds one full devcontainer commit, and the fragment
 builds `github:xorq-labs/devcontainer/<rev>?dir=nix/kenn`. The pin lives in
 a file rather than in the fragment so that anything else needing the same
 toolkit — CI, say — can read the same revision. An empty or missing
 `kenn.rev` is an error, not a fall back to devcontainer's default branch.
-To try an upgrade before moving the pin:
+To try an upgrade before moving the pin, export `KENN_REV` (a commit, tag, or
+slash-free branch); it persists across reloads until unset:
 
 ```sh
-KENN_REV=main direnv reload
+export KENN_REV=main; direnv reload   # try it
+unset KENN_REV; direnv reload         # back to the pin
 ```
 
 A bump is a change to `kenn.rev` alone. The file is watched, so moving it
@@ -455,17 +453,16 @@ rebuilds on the next load.
 
 **If a build fails** — offline, or GitHub unreachable — the fragment keeps
 the previously built toolkit and says so. The layer comes up empty, with a
-`log_error`, only when nothing has been built yet or the pin is empty — an
-empty pin refuses rather than falling back.
+`log_error`, only when nothing has been built yet or the pin is empty.
 
-**Free by default.** It builds `kenn-io-toolkit`. `kenn-io-toolkit-all` also
-includes `kenn-forge`, which is unfree (Elastic-2.0); the kenn flake allows
-that one package without any nixpkgs config here, so opting in is just a
-change to `kenn_attr` — but it is a licensing call, not a default a template
-should make for you.
+**Free by default.** `kenn-io-toolkit-all` adds `kenn-forge` (Elastic-2.0,
+unfree; the flake's own `allowUnfreePredicate` covers it, so switching
+`kenn_attr` is the whole change). That is a licensing call, so it is not the
+default.
 
 It needs `nix` with network access to GitHub on the first load, and nothing
-else: no devcontainer checkout, and no nix-direnv.
+else: no devcontainer checkout, and no nix-direnv. There is no cache: every
+load re-evaluates the flake (a few seconds), offline after the first.
 
 ## Path conventions
 

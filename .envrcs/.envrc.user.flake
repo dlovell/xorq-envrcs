@@ -17,10 +17,9 @@ if [ -f "$direnv_root/flake.nix" ]; then
     # would cover the lock.
     #
     # The pushd is what anchors everything else nix-direnv derives from PWD.
-    # It is what puts the layout dir (and so the flake profile and its nix GC
-    # root) at the repo root — the default in .envrc only settles the case
-    # for a fragment that does not pushd. It also fixes the generated
-    # nix-direnv-reload helper, whose body bakes in $PWD at generation time:
+    # (Not the layout dir: .envrc pins that for every fragment.) It fixes the
+    # generated nix-direnv-reload helper, whose body bakes in $PWD at
+    # generation time:
     # built from .envrcs/, its `touch "$PWD/.envrc"` would *create* a stray
     # .envrcs/.envrc, which direnv then loads instead of the root one — and
     # refuses as unallowed — for any shell whose cwd is under .envrcs/.

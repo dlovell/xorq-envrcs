@@ -112,6 +112,21 @@ the file.
 An existing-but-empty file satisfies the auto-create check and is a no-op
 when sourced.
 
+**To drop a layer for the whole repo, stop tracking its template.** The
+auto-create skips a file whose template is absent, and the root `.envrc`
+sources each fragment with `source_env_if_exists`, so a missing layer is a
+silent no-op rather than an error on every reload (or an aborted load under
+`strict_env`). The root `.envrc` needs no edit, which keeps it identical
+across every repo using this layout. Two consequences:
+
+- Checkouts that already generated the fragment keep sourcing it; removing
+  the template only stops new copies. Delete the local file too.
+- Removing `.envrc.user.template` drops `.env.local` with it, for the reason
+  above.
+
+The skip applies only to a missing template. If the template is there and
+`install` fails for another reason, that still surfaces.
+
 **If you symlinked the local file to its template** instead of copying it,
 do not empty it — you would truncate the tracked template. Replace the
 symlink with a real copy first (`cp --remove-destination
@@ -487,7 +502,11 @@ complains. `uv` or `nix` only if you enable that toolchain fragment.
 `.envrcs/` except `demo-age-key.txt` and `.env.secrets.demo.sops-encrypted`
 — those two exist so *this* repo demonstrates itself. Leaving them out is
 safe: the demo line in `.envrc.secrets.template` watches a bundle that isn't
-there and no-ops.
+there and no-ops. The templates are optional too: leave out
+`.envrc.secrets.template` (with `.envrc.sops` and the demo files) if you have
+no sops secrets, or `.gitignore.template` if you already keep a
+`.gitignore` of your own — see
+[Auto-create](#auto-create-and-how-to-disable-a-fragment).
 
 **Fix your `.gitignore` before the first `direnv allow`, not after.** The
 auto-create skips an existing `.gitignore`, so `.envrcs/.envrc.secrets` and

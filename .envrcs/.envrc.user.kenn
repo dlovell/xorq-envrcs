@@ -15,10 +15,9 @@ kenn_flake="github:xorq-labs/devcontainer/${kenn_rev}?dir=nix/kenn"
 # than a template default.
 kenn_attr="kenn-io-toolkit"
 # In the checkout, not $(direnv_layout_dir): the link is a GC root, so it must
-# die with the checkout. A direnvrc that makes direnv_layout_dir a $PWD-keyed
-# function (the direnv wiki's ~/.cache recipe) ignores the variable .envrc
-# sets, and with PWD at .envrcs/ the link lands in a cache dir keyed on it --
-# outliving a deleted checkout or worktree and pinning the toolkit forever.
+# die with the checkout, and a direnvrc that relocates layouts would carry it
+# somewhere that outlives one. Why here and not the layout dir like the flake
+# profile: .envrcs/README.md, "kenn".
 kenn_link="$direnv_root/.direnv/kenn-toolkit"
 
 kenn_layer() {

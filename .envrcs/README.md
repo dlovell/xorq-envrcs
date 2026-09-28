@@ -434,7 +434,13 @@ expression, the layout dir, and the body of the generated
 searches upward and builds the right flake, so a bare `use flake` *works*
 while watching the wrong lock file. The fragment passes `$direnv_root`
 explicitly *and* runs from it; the comment on those lines says what each one
-costs.
+costs. The layout dir is the root `.envrc`'s job: it asks `direnv_layout_dir`
+once, from the root, and pins the function to the answer. So a direnvrc that
+keys layouts on `$PWD` (the direnv wiki's `~/.cache/direnv/layouts/` recipe)
+cannot give a fragment that stays in `.envrcs/` a second, `--envrcs`-keyed
+layout dir whose `{nix,flake}-profile*` GC roots nothing ever cleans up.
+Pulling the new `.envrc` does not remove dirs already created that way:
+delete `~/.cache/direnv/layouts/*--envrcs` once.
 
 ## kenn
 
@@ -445,18 +451,20 @@ none.
 
 **A PATH layer, not `use flake`.** nix-direnv's `use flake`/`use nix`
 delete `{nix,flake}-profile*` in the layout dir on every cache miss, and all
-fragments share one layout dir, so a second `use flake` beside
+fragments share one layout dir (the root `.envrc` pins it), so a second `use flake` beside
 `.envrc.user.flake` evicts the other's cache on every load (nix-direnv 3.0.5:
 both print `Renewed cache`). `nix build --out-link kenn-toolkit` + `PATH_add`
 sits outside that glob and doubles as the GC root.
 
 **The link lives at `$direnv_root/.direnv/kenn-toolkit`**, not under
 `$(direnv_layout_dir)`. With stock direnv the two are the same place. They
-differ under a direnvrc that redefines `direnv_layout_dir` as a function of
-`$PWD` (the common recipe that moves layouts to `~/.cache/direnv/layouts/`):
-the fragment runs with PWD at `.envrcs/`, so the link, and with it the GC
+differ under a direnvrc that relocates layouts (the common recipe that moves
+them to `~/.cache/direnv/layouts/`). There the link, and with it the GC
 root, would land in a cache dir that nothing removes when the checkout or
-worktree is deleted, keeping every toolkit it ever built alive.
+worktree is deleted, keeping every toolkit it ever built alive. The
+`use flake` profile is exposed to the same thing, but there the relocation
+is the direnvrc's own choice and applies to every repo. The kenn link is
+this template's, so it stays in the checkout.
 
 **Pinned.** `kenn.rev` holds one full devcontainer commit, and the fragment
 builds `github:xorq-labs/devcontainer/<rev>?dir=nix/kenn`. The pin lives in
@@ -537,7 +545,7 @@ things to do, in this order:
 **If you already have an `.envrc`**, its contents move into the root `.envrc`
 *after* the `export direnv_root` line and *before* the `source_env` calls, or
 into a fragment of your own sourced alongside them. `$direnv_root` and the
-layout-dir default have to be set before anything uses them.
+layout-dir lines have to run before anything uses them.
 
 **The tracked templates are placeholders, not content.** `.env.local.template`
 ships `EXAMPLE_*` names; `.envrc.secrets.template` ships the demo bundle line

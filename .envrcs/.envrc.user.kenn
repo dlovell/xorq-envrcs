@@ -14,7 +14,12 @@ kenn_flake="github:xorq-labs/devcontainer/${kenn_rev}?dir=nix/kenn"
 # Not -all: it adds kenn-forge (unfree, Elastic-2.0), a licensing call rather
 # than a template default.
 kenn_attr="kenn-io-toolkit"
-kenn_link="$(direnv_layout_dir)/kenn-toolkit"
+# In the checkout, not $(direnv_layout_dir): the link is a GC root, so it must
+# die with the checkout. A direnvrc that makes direnv_layout_dir a $PWD-keyed
+# function (the direnv wiki's ~/.cache recipe) ignores the variable .envrc
+# sets, and with PWD at .envrcs/ the link lands in a cache dir keyed on it --
+# outliving a deleted checkout or worktree and pinning the toolkit forever.
+kenn_link="$direnv_root/.direnv/kenn-toolkit"
 
 kenn_layer() {
     PATH_add "$kenn_link/bin"
@@ -23,7 +28,7 @@ kenn_layer() {
     export XDG_DATA_DIRS="$kenn_link/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 }
 
-mkdir -p "$(direnv_layout_dir)"
+mkdir -p "${kenn_link%/*}"
 # --out-link, not --no-link: the link is the toolkit's GC root, and its name
 # stays outside the {nix,flake}-profile* glob nix-direnv deletes. The -d test
 # follows the symlink, so a collected store path falls through to the error.

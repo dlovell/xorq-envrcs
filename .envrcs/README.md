@@ -450,6 +450,14 @@ fragments share one layout dir, so a second `use flake` beside
 both print `Renewed cache`). `nix build --out-link kenn-toolkit` + `PATH_add`
 sits outside that glob and doubles as the GC root.
 
+**The link lives at `$direnv_root/.direnv/kenn-toolkit`**, not under
+`$(direnv_layout_dir)`. With stock direnv the two are the same place. They
+differ under a direnvrc that redefines `direnv_layout_dir` as a function of
+`$PWD` (the common recipe that moves layouts to `~/.cache/direnv/layouts/`):
+the fragment runs with PWD at `.envrcs/`, so the link, and with it the GC
+root, would land in a cache dir that nothing removes when the checkout or
+worktree is deleted, keeping every toolkit it ever built alive.
+
 **Pinned.** `kenn.rev` holds one full devcontainer commit, and the fragment
 builds `github:xorq-labs/devcontainer/<rev>?dir=nix/kenn`. The pin lives in
 a file rather than in the fragment so that anything else needing the same

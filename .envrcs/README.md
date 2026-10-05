@@ -518,8 +518,14 @@ the `.envrc` sets, the kenn PATH included. Here a missing value logs an
 error, sets nothing, and kata picks its daemon as it would anywhere else.
 
 **No URL check.** kata 0.18.0 refuses a `KATA_SERVER` with no scheme,
-another scheme, or plain http to a name, before connecting; a well-formed
-URL to the wrong host passes kata and any pattern check alike.
+another scheme, or plain http to a name or a public IP, before connecting; a
+well-formed URL to the wrong host passes kata and any pattern check alike.
+The refusal suggests `KATA_ALLOW_INSECURE=1`: fix the value instead, since
+that is the variable the fragment removes.
+
+**Checking it.** `kata federation identity --json` sends the token and
+reports the actor it authenticated; `kata health` sends none, so it passes
+even where the token would be refused.
 
 ## Path conventions
 

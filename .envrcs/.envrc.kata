@@ -13,5 +13,8 @@ if [ -n "${KATA_TEAM_SERVER:-}" ] && [ -n "${KATA_TEAM_TOKEN:-}" ]; then
 else
     # One inherited from outside would go to whatever daemon kata picks.
     unset KATA_AUTH_TOKEN
-    log_error "kata here is not set up for the team server: KATA_TEAM_SERVER or KATA_TEAM_TOKEN is unset"
+    _kata_missing=
+    [ -n "${KATA_TEAM_SERVER:-}" ] || _kata_missing=KATA_TEAM_SERVER
+    [ -n "${KATA_TEAM_TOKEN:-}" ] || _kata_missing="${_kata_missing:+$_kata_missing and }KATA_TEAM_TOKEN"
+    log_error "kata here is not set up for the team server: $_kata_missing unset or empty"
 fi

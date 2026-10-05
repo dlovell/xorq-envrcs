@@ -8,3 +8,7 @@
 # source_env .envrc.user.kenn
 
 dotenv_if_exists .env.local
+
+# Optional: kata calls go to the team server. After .env.local, which can
+# hold KATA_TEAM_SERVER.
+# source_env .envrc.kata

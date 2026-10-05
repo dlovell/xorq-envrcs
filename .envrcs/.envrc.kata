@@ -1,0 +1,15 @@
+# kata calls from this checkout go to a team server, from KATA_TEAM_SERVER
+# (.env.local, say) and KATA_TEAM_TOKEN (the secrets layer), names kata
+# doesn't read on its own. Opt in with `source_env .envrc.kata` in
+# .envrc.user, after whatever sets the two. kata itself comes from
+# elsewhere (.envrc.user.kenn, say). Why this shape: .envrcs/README.md, "kata".
+
+if [ -n "${KATA_TEAM_SERVER:-}" ] && [ -n "${KATA_TEAM_TOKEN:-}" ]; then
+    # KATA_TRUST_PRIVATE_NETWORK lets kata send the token over plain http to
+    # a literal private IP (a tailnet 100.x address), and only to one;
+    # KATA_ALLOW_INSECURE would let it go to a name, so it goes.
+    export KATA_SERVER=$KATA_TEAM_SERVER KATA_AUTH_TOKEN=$KATA_TEAM_TOKEN KATA_TRUST_PRIVATE_NETWORK=1
+    unset KATA_ALLOW_INSECURE
+else
+    log_error "kata here is not set up for the team server: KATA_TEAM_SERVER or KATA_TEAM_TOKEN is unset"
+fi

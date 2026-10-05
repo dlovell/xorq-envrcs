@@ -14,6 +14,7 @@ direnv configuration split into composable fragments, sourced from the root `.en
 | `.envrc.user.uv` | User env variant: uv sync + venv activation; guards on `pyproject.toml` existing, not on whether you use uv |
 | `.envrc.user.kenn` | Additive user layer: kenn-io toolkit (kata, kwt, roborev, ...) on PATH from the devcontainer flake |
 | `kenn.rev` | The one devcontainer revision `.envrc.user.kenn` builds from |
+| `.envrc.kata` | Opt-in: kata calls go to a team server, from `KATA_TEAM_SERVER` and `KATA_TEAM_TOKEN` |
 | `.env.local.template` | Third layer: per-user, non-secret dotenv values |
 | `.env.secrets.demo.sops-encrypted` | Encrypted demo bundle the secrets layer decrypts |
 | `demo-age-key.txt` | Throwaway private key for the demo bundle — committed on purpose, see below |
@@ -149,7 +150,7 @@ you want off. Editing through a symlink shows up as a dirty tracked file in
 
 `.env.local` is deliberately *not* auto-created: its template presents
 mutually exclusive strategies, and silently applying both would leave the
-environment in a state nobody asked for. Copy it and uncomment exactly one.
+environment in a state nobody asked for. Copy it and uncomment at most one.
 
 The rules that cover all of this, and the reason for each, are in
 `.gitignore.template` itself; the block under
@@ -495,6 +496,37 @@ It needs `nix` with network access to GitHub on the first load, and nothing
 else: no devcontainer checkout, and no nix-direnv. There is no cache: every
 load re-evaluates the flake (a few seconds), offline after the first.
 
+## kata
+
+`.envrc.kata` points kata at a team server: it exports `KATA_SERVER` and
+`KATA_AUTH_TOKEN` from `KATA_TEAM_SERVER` and `KATA_TEAM_TOKEN`, sets
+`KATA_TRUST_PRIVATE_NETWORK=1` and unsets `KATA_ALLOW_INSECURE`. Opt in with
+`source_env .envrc.kata` in `.envrc.user` (a file older than this fragment
+lacks the commented line: add it), after anything that sets the two:
+`.env.local` for the server (the literal tailnet IP, in 100.64.0.0/10, not a
+name), a sops bundle in the secrets layer for the token. It brings no kata
+binary; the kenn layer does.
+
+**Two names in, two out.** kata doesn't read `KATA_TEAM_*`, so they can sit
+anywhere, a global shell env included. `KATA_AUTH_TOKEN` must not: it
+overrides every daemon's token, so where `KATA_SERVER` is unset kata would
+send the team token to a local daemon. The fragment sets both or neither,
+and with neither it unsets any `KATA_AUTH_TOKEN` it inherited.
+
+**An `if`, not `${VAR:?}`.** A failing `:?` makes direnv drop everything
+the `.envrc` sets, the kenn PATH included. Here a missing value logs an
+error, sets nothing, and kata picks its daemon as it would anywhere else.
+
+**No URL check.** kata 0.18.0 refuses a `KATA_SERVER` with no scheme,
+another scheme, or plain http to a name or a public IP, before connecting; a
+well-formed URL to the wrong host passes kata and any pattern check alike.
+The refusal suggests `KATA_ALLOW_INSECURE=1`: fix the value instead, since
+that is the variable the fragment removes.
+
+**Checking it.** `kata federation identity --json` sends the token and
+reports the actor it authenticated; `kata health` sends none, so it passes
+even where the token would be refused.
+
 ## Path conventions
 
 - **`$direnv_root`** — exported by the root `.envrc`; points to the repo root. Use it for paths that must survive worktree copies (e.g. `$direnv_root/.venv`), and for anything a helper would otherwise resolve against PWD (e.g. `use flake "$direnv_root"`).
@@ -603,7 +635,8 @@ Deliberately not done, so they are not mistaken for oversights:
 └── source_env_if_exists .envrcs/.envrc.user
     ├── one of: .envrc.user.{uv,flake}
     ├── optionally also: .envrc.user.kenn → kenn-io toolkit on PATH
-    └── dotenv_if_exists .env.local → per-user non-secret values, if configured
+    ├── dotenv_if_exists .env.local → per-user non-secret values, if configured
+    └── optionally: .envrc.kata → kata calls to the team server
 ```
 
 A fresh clone only needs:
@@ -616,5 +649,5 @@ To also set per-user non-secret values (optional, not auto-created):
 
 ```sh
 cp .envrcs/.env.local.template .envrcs/.env.local
-# edit .envrcs/.env.local, uncomment ONE strategy
+# edit .envrcs/.env.local, uncomment at most ONE strategy
 ```

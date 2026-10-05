@@ -150,7 +150,7 @@ you want off. Editing through a symlink shows up as a dirty tracked file in
 
 `.env.local` is deliberately *not* auto-created: its template presents
 mutually exclusive strategies, and silently applying both would leave the
-environment in a state nobody asked for. Copy it and uncomment exactly one.
+environment in a state nobody asked for. Copy it and uncomment at most one.
 
 The rules that cover all of this, and the reason for each, are in
 `.gitignore.template` itself; the block under
@@ -500,16 +500,18 @@ load re-evaluates the flake (a few seconds), offline after the first.
 
 `.envrc.kata` points kata at a team server: it exports `KATA_SERVER` and
 `KATA_AUTH_TOKEN` from `KATA_TEAM_SERVER` and `KATA_TEAM_TOKEN`, sets
-`KATA_TRUST_PRIVATE_NETWORK=1` and unsets `KATA_ALLOW_INSECURE`. Opt in by
-uncommenting `source_env .envrc.kata` in `.envrc.user`, after anything that
-sets the two: `.env.local` for the server (the literal 100.x tailnet IP, not
-a name), the secrets layer for the token. It brings no kata binary; the kenn
-layer does.
+`KATA_TRUST_PRIVATE_NETWORK=1` and unsets `KATA_ALLOW_INSECURE`. Opt in with
+`source_env .envrc.kata` in `.envrc.user` (a file older than this fragment
+lacks the commented line: add it), after anything that sets the two:
+`.env.local` for the server (the literal tailnet IP, in 100.64.0.0/10, not a
+name), a sops bundle in the secrets layer for the token. It brings no kata
+binary; the kenn layer does.
 
 **Two names in, two out.** kata doesn't read `KATA_TEAM_*`, so they can sit
 anywhere, a global shell env included. `KATA_AUTH_TOKEN` must not: it
 overrides every daemon's token, so where `KATA_SERVER` is unset kata would
-send the team token to a local daemon. The fragment sets both or neither.
+send the team token to a local daemon. The fragment sets both or neither,
+and with neither it unsets any `KATA_AUTH_TOKEN` it inherited.
 
 **An `if`, not `${VAR:?}`.** A failing `:?` makes direnv drop everything
 the `.envrc` sets, the kenn PATH included. Here a missing value logs an
@@ -641,5 +643,5 @@ To also set per-user non-secret values (optional, not auto-created):
 
 ```sh
 cp .envrcs/.env.local.template .envrcs/.env.local
-# edit .envrcs/.env.local, uncomment ONE strategy
+# edit .envrcs/.env.local, uncomment at most ONE strategy
 ```
